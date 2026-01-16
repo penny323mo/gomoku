@@ -143,9 +143,10 @@ function findEasyMove() {
     return { r: 7, c: 7 };
 }
 
-// MEDIUM: Pick from top 5 best moves
+// MEDIUM: Pick from top moves but prioritize blocking
 function findMediumMove() {
     let allMoves = [];
+    let mustBlockMoves = [];
 
     // Evaluate every empty cell and store score
     for (let r = 0; r < BOARD_SIZE; r++) {
@@ -154,7 +155,12 @@ function findMediumMove() {
                 const attackScore = evaluatePoint(r, c, 'white');
                 const defenseScore = evaluatePoint(r, c, 'black');
 
-                // Same scoring logic as hard
+                // If defense score is high (blocking 3 or 4), we MUST consider this serious
+                // Threshold 5000 covers blocking "Live 3" (becomes "Live 4" if ignored) and "Dead 4"
+                if (defenseScore >= 2000) {
+                    mustBlockMoves.push({ r, c, score: defenseScore });
+                }
+
                 let totalScore = attackScore + defenseScore;
 
                 // Heuristic
@@ -166,14 +172,24 @@ function findMediumMove() {
         }
     }
 
-    // Sort descending
+    // 1. Safety Check: If there are urgent defensive moves, pick the best one essentially (behaving like Hard)
+    // or at least pick one of them randomly if they are similar.
+    // For Medium, let's say: if threat exists, ACTUALLY BLOCK IT. 
+    // Don't act dumb when you are about to lose.
+    if (mustBlockMoves.length > 0) {
+        mustBlockMoves.sort((a, b) => b.score - a.score);
+        return mustBlockMoves[0];
+    }
+
+    // 2. No immediate threat: Sort all moves descending
     allMoves.sort((a, b) => b.score - a.score);
 
-    // Pick from top 5 (or fewer if not enough available)
-    const topN = 5;
+    // Pick from top 3-5 to give some randomness but stay reasonable
+    const topN = 4;
     const poolSize = Math.min(allMoves.length, topN);
 
     if (poolSize > 0) {
+        // Weighted random could be better, but simple random slice is fine for "Medium"
         const randomIndex = Math.floor(Math.random() * poolSize);
         return allMoves[randomIndex];
     }

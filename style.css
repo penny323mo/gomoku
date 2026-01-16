@@ -1,92 +1,151 @@
 :root {
-    --bg-color: #f4f4f9;
-    --board-color: #e3c485;
+    --bg-color: #e9ecef;
+    --board-color: #eebb76;
+    /* Warm wood color */
     --line-color: #5d4037;
-    --black-stone: #1a1a1a;
-    --white-stone: #f2f2f2;
-    --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --primary-color: #4a90e2;
+    --text-color: #2c3e50;
+    --shadow-light: rgba(0, 0, 0, 0.1);
+    --shadow-deep: rgba(0, 0, 0, 0.3);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
 body {
-    font-family: 'Inter', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: var(--bg-color);
+    color: var(--text-color);
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    margin: 0;
-    color: #333;
+    padding: 20px;
 }
 
 main {
     text-align: center;
     background: white;
-    padding: 2rem;
-    border-radius: 16px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px var(--shadow-light);
+    max-width: 600px;
+    width: 100%;
 }
 
 h1 {
-    margin-bottom: 1rem;
+    margin-bottom: 20px;
+    font-size: 2.5rem;
     font-weight: 700;
-    color: #2c3e50;
+    color: #333;
+    letter-spacing: -0.05em;
 }
 
 #status {
-    margin-bottom: 1.5rem;
-    font-size: 1.2rem;
+    margin-bottom: 15px;
+    font-size: 1.25rem;
     font-weight: 500;
 }
 
 .player-turn {
-    font-weight: 700;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.controls {
+    margin-bottom: 25px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+
+.controls label {
+    font-weight: 600;
+    color: #666;
+}
+
+.controls select {
+    padding: 8px 16px;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: 2px solid #ddd;
+    background-color: #fafafa;
+    cursor: pointer;
+    transition: all 0.2s;
+    outline: none;
+}
+
+.controls select:hover,
+.controls select:focus {
+    border-color: var(--primary-color);
 }
 
 #board {
     display: grid;
-    grid-template-columns: repeat(15, 30px);
-    grid-template-rows: repeat(15, 30px);
-    gap: 1px;
-    background-color: var(--line-color);
-    border: 5px solid var(--board-color);
-    margin: 0 auto;
-    width: fit-content;
-    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    grid-template-columns: repeat(15, 1fr);
+    grid-template-rows: repeat(15, 1fr);
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background-color: var(--board-color);
+    border: 4px solid #8d6e63;
+    box-shadow: 0 10px 20px var(--shadow-deep);
+    margin: 0 auto 30px auto;
+    position: relative;
+    border-radius: 4px;
 }
 
+/* Grid Lines */
 .cell {
-    width: 30px;
-    height: 30px;
-    background-color: var(--board-color);
     position: relative;
     cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
-.cell:hover {
-    background-color: #eccd93;
+.cell::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: var(--line-color);
+    transform: translateY(-50%);
+    z-index: 0;
 }
 
+.cell::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    height: 100%;
+    width: 1px;
+    background: var(--line-color);
+    transform: translateX(-50%);
+    z-index: 0;
+}
+
+/* Star Points (Optional dots - simplistic approach for now) */
+/* Can be added later if needed */
+
+/* Stones */
 .stone {
-    width: 24px;
-    height: 24px;
+    width: 80%;
+    height: 80%;
     border-radius: 50%;
-    box-shadow: inset 2px 2px 5px rgba(255,255,255,0.3), 
-                inset -2px -2px 5px rgba(0,0,0,0.3),
-                2px 2px 4px rgba(0,0,0,0.4);
-    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    transform: scale(0);
-    animation: placeStone 0.3s forwards;
-}
-
-@keyframes placeStone {
-    to { transform: scale(1); }
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+    box-shadow: 2px 2px 4px var(--shadow-deep);
 }
 
 .stone.black {
-    background: radial-gradient(circle at 30% 30%, #444, #000);
+    background: radial-gradient(circle at 30% 30%, #666, #000);
 }
 
 .stone.white {
@@ -94,32 +153,33 @@ h1 {
 }
 
 #reset-btn {
-    margin-top: 1.5rem;
-    padding: 0.75rem 1.5rem;
-    border: none;
-    border-radius: 8px;
-    background-color: #3498db;
-    color: white;
+    padding: 12px 30px;
+    font-size: 1.1rem;
     font-weight: 600;
+    color: white;
+    background-color: var(--primary-color);
+    border: none;
+    border-radius: 50px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: transform 0.1s, box-shadow 0.2s;
+    box-shadow: 0 4px 10px rgba(74, 144, 226, 0.4);
 }
 
 #reset-btn:hover {
-    background-color: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(74, 144, 226, 0.5);
 }
 
-.controls {
-    margin-bottom: 20px;
-    font-size: 1.1rem;
-    color: #333;
+#reset-btn:active {
+    transform: translateY(0);
 }
 
-.controls select {
-    padding: 5px 10px;
-    font-size: 1rem;
-    border-radius: 5px;
-    border: 1px solid #ccc;
-    cursor: pointer;
-    background-color: white;
+@media (max-width: 600px) {
+    main {
+        padding: 20px;
+    }
+
+    h1 {
+        font-size: 2rem;
+    }
 }
