@@ -11,15 +11,52 @@
 <body>
     <main>
         <h1>五子棋</h1>
-        <div id="status">當前回合：<span class="player-turn">黑子</span></div>
-        <div class="controls">
-            <label for="difficulty">難度：</label>
-            <select id="difficulty">
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard" selected>Hard</option>
-            </select>
+
+        <!-- Mode Selector -->
+        <div id="mode-selector">
+            <button id="mode-ai" class="mode-btn active" onclick="setMode('ai')">對 AI 對戰</button>
+            <button id="mode-online" class="mode-btn" onclick="setMode('online')">Online 對戰</button>
         </div>
+
+        <div id="status">當前回合：<span class="player-turn">黑子</span></div>
+
+        <!-- AI Controls -->
+        <div id="ai-controls">
+            <div class="controls">
+                <label for="difficulty">難度：</label>
+                <select id="difficulty">
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard" selected>Hard</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Online Controls (Hidden by default) -->
+        <div id="online-global-controls" class="hidden">
+            <!-- Room List -->
+            <div id="room-list">
+                <h3>選擇房間</h3>
+                <div class="room-buttons">
+                    <button class="room-btn" onclick="joinRoom('room1')">Room 1 <span id="room1-count"></span></button>
+                    <button class="room-btn" onclick="joinRoom('room2')">Room 2 <span id="room2-count"></span></button>
+                    <button class="room-btn" onclick="joinRoom('room3')">Room 3 <span id="room3-count"></span></button>
+                </div>
+            </div>
+
+            <!-- In-Room Info (Hidden until joined) -->
+            <div id="room-info" class="hidden">
+                <div class="room-status">
+                    <span id="current-room-id"></span> |
+                    身份: <span id="my-role"></span>
+                </div>
+                <div class="room-actions">
+                    <button id="online-start-btn" class="hidden" onclick="startOnlineGame()">開始遊戲</button>
+                    <button id="leave-room-btn" onclick="leaveRoom()">退出房間</button>
+                </div>
+            </div>
+        </div>
+
         <div id="board"></div>
         <button id="reset-btn" onclick="resetGame()">重新開始</button>
     </main>
@@ -30,13 +67,13 @@
 
     <script>
         const firebaseConfig = {
-            apiKey: "AIzaSyDtXZSRNucuIfScF3qI8wMHkxyY6GQ",
-            authDomain: "gomoku-85ab0.firebaseapp.com",
-            projectId: "gomoku-85ab0",
-            storageBucket: "gomoku-85ab0.firebasestorage.app",
-            messagingSenderId: "1022982066439",
-            appId: "1:1022982066439:web:97484bb0b67e3bd01dae12",
-            measurementId: "G-6478SRPLQ6"
+            apiKey: "AIzaSyDIX2SINucrLofi5ceF3qI8wHMH6xyY6GQ",
+            authDomain: "gomoku-85a0b.firebaseapp.com",
+            projectId: "gomoku-85a0b",
+            storageBucket: "gomoku-85a0b.firebasestorage.app",
+            messagingSenderId: "1022980266439",
+            appId: "1:1022980266439:web:978440b8b67eb30d1ae1e2",
+            measurementId: "G-64785RPL06"
         };
 
         // Initialize Firebase

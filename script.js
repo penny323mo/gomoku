@@ -10,7 +10,7 @@ async function testFirebase() {
         console.error("testFirebase error: ", e);
     }
 }
-
+window.testFirebase = testFirebase;
 // Perform test write
 testFirebase();
 
@@ -24,8 +24,21 @@ let playerTurnSpan = document.querySelector('.player-turn');
 let board = [];
 let currentPlayer = 'black';
 let gameOver = false;
-let isVsAI = true; // AI mode enabled by default
+let isVsAI = true; // Still used for internal logic, but effectively determined by 'mode'
 let difficulty = 'hard';
+
+// --- Online Global State ---
+let mode = 'ai'; // 'ai' or 'online'
+let roomId = null;
+let playerRole = null; // 'black', 'white', 'spectator', or null
+let roomUnsubscribe = null;
+
+// --- Client ID Logic ---
+let clientId = localStorage.getItem('gomoku_clientId');
+if (!clientId) {
+    clientId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('gomoku_clientId', clientId);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     const difficultySelect = document.getElementById('difficulty');
@@ -85,7 +98,55 @@ function createBoard() {
 }
 
 function handleCellClick(row, col) {
-    if (gameOver || board[row][col] !== null) {
+    if (gameOver) return;
+
+    // --- Online Mode Logic ---
+    if (mode === 'online') {
+        if (!roomId || !playerRole || (playerRole !== 'black' && playerRole !== 'white')) return;
+        if (currentPlayer !== playerRole) return;
+        if (board[row][col] !== null) return;
+
+        const roomRef = db.collection('rooms').doc(roomId);
+
+        db.runTransaction(async (transaction) => {
+            const doc = await transaction.get(roomRef);
+            if (!doc.exists) throw "Room does not exist";
+
+            const data = doc.data();
+            if (data.gameOver) throw "Game is over";
+            if (data.currentPlayer !== playerRole) throw "Not your turn";
+            if (data.board[row][col] !== null) throw "Cell occupied";
+
+            // Prepare new board state
+            const newBoard = data.board; // deep copy used by Firestore? No, but we modify it.
+            // Firestore data calls return JS objects. modifying data.board modifies the object.
+            // We need to be careful? Actually it's fine to modify 'data' object if we write it back.
+            newBoard[row][col] = playerRole;
+
+            const isWin = checkWin(row, col, playerRole, true, newBoard); // usage of helper with new board
+
+            const updates = {
+                board: newBoard,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            if (isWin) {
+                updates.gameOver = true;
+                // wins are handled by update listener
+            } else {
+                updates.currentPlayer = (playerRole === 'black') ? 'white' : 'black';
+            }
+
+            transaction.update(roomRef, updates);
+        }).catch(err => {
+            console.error("Move transaction failed:", err);
+        });
+
+        return;
+    }
+
+    // --- AI Mode Logic ---
+    if (board[row][col] !== null) {
         return;
     }
 
@@ -368,7 +429,7 @@ function getPlayerName(player) {
     return player === 'black' ? '黑子' : '白子';
 }
 
-function countDirection(row, col, dx, dy, player) {
+function countDirection(row, col, dx, dy, player, boardState = board) {
     let count = 0;
     let r = row + dx;
     let c = col + dy;
@@ -376,7 +437,7 @@ function countDirection(row, col, dx, dy, player) {
     while (
         r >= 0 && r < 15 &&
         c >= 0 && c < 15 &&
-        board[r][c] === player
+        boardState[r][c] === player
     ) {
         count++;
         r += dx;
@@ -386,7 +447,7 @@ function countDirection(row, col, dx, dy, player) {
 }
 
 // Added isSimulating flag to prevent alerts during AI calculation
-function checkWin(row, col, player, isSimulating = false) {
+function checkWin(row, col, player, isSimulating = false, boardState = board) {
     const directions = [
         [0, 1],   // horizontal
         [1, 0],   // vertical
@@ -397,11 +458,11 @@ function checkWin(row, col, player, isSimulating = false) {
     for (const [dx, dy] of directions) {
         const total =
             1 +
-            countDirection(row, col, dx, dy, player) +
-            countDirection(row, col, -dx, -dy, player);
+            countDirection(row, col, dx, dy, player, boardState) +
+            countDirection(row, col, -dx, -dy, player, boardState);
 
         if (total >= 5) {
-            if (!isSimulating) {
+            if (!isSimulating && boardState === board) { // Only alert if using main board and not sim
                 setTimeout(() => alert(getPlayerName(player) + " 獲勝！"), 10);
                 gameOver = true;
             }
@@ -413,3 +474,230 @@ function checkWin(row, col, player, isSimulating = false) {
 
 // Start the game
 resetGame();
+
+// --- Online Mode Functions ---
+
+function setMode(newMode) {
+    mode = newMode;
+    isVsAI = (mode === 'ai');
+
+    // Update Mode Buttons
+    document.getElementById('mode-ai').classList.toggle('active', mode === 'ai');
+    document.getElementById('mode-online').classList.toggle('active', mode === 'online');
+
+    // Toggle Sections
+    const aiControls = document.getElementById('ai-controls');
+    const onlineControls = document.getElementById('online-global-controls');
+    const resetBtn = document.getElementById('reset-btn');
+
+    if (mode === 'ai') {
+        aiControls.classList.remove('hidden');
+        onlineControls.classList.add('hidden');
+        resetBtn.style.display = 'inline-block';
+        if (roomUnsubscribe) leaveRoom(); // Auto leave if switching back to AI
+        resetGame(); // Reset local AI game
+    } else {
+        aiControls.classList.add('hidden');
+        onlineControls.classList.remove('hidden');
+        resetBtn.style.display = 'none'; // Hide local reset button in online mode lobby
+        // Reset board for clean state
+        boardElement.innerHTML = '';
+        statusElement.innerHTML = '請選擇房間加入';
+    }
+}
+
+function joinRoom(selectedRoomId) {
+    if (roomId === selectedRoomId) return; // Already in this room
+
+    // Leave previous room if any
+    if (roomUnsubscribe) {
+        roomUnsubscribe();
+        roomUnsubscribe = null;
+    }
+
+    roomId = selectedRoomId;
+
+    // Show room info
+    document.getElementById('room-list').classList.add('hidden');
+    document.getElementById('room-info').classList.remove('hidden');
+    document.getElementById('current-room-id').textContent = roomId;
+
+    const roomRef = db.collection('rooms').doc(roomId);
+
+    db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(roomRef);
+
+        if (!doc.exists) {
+            // Create room if not exists
+            transaction.set(roomRef, {
+                board: Array(15).fill(null).map(() => Array(15).fill(null)),
+                currentPlayer: 'black',
+                gameOver: false,
+                players: { blackId: null, whiteId: null },
+                spectators: [],
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            return { role: 'black' }; // First joiner becomes black
+        }
+
+        const data = doc.data();
+        let assignedRole = 'spectator';
+
+        if (data.players.blackId === clientId || data.players.blackId === null) {
+            assignedRole = 'black';
+            transaction.update(roomRef, { 'players.blackId': clientId });
+        } else if (data.players.whiteId === clientId || data.players.whiteId === null) {
+            assignedRole = 'white';
+            transaction.update(roomRef, { 'players.whiteId': clientId });
+        } else {
+            // Add to spectators if not already there
+            if (!data.spectators.includes(clientId)) {
+                transaction.update(roomRef, {
+                    spectators: firebase.firestore.FieldValue.arrayUnion(clientId)
+                });
+            }
+        }
+
+        return { role: assignedRole };
+    }).then((result) => {
+        playerRole = result.role;
+        document.getElementById('my-role').textContent = getPlayerName(playerRole) || '觀眾';
+        bindRoomListener();
+    }).catch((error) => {
+        console.error("Join room failed: ", error);
+        alert("加入了房間失敗，請稍後再試。");
+        setMode('online'); // Reset UI
+    });
+}
+
+function leaveRoom() {
+    if (!roomId) return;
+
+    const roomRef = db.collection('rooms').doc(roomId);
+
+    // Attempt to remove self from room
+    if (playerRole === 'black') {
+        roomRef.update({ 'players.blackId': null });
+    } else if (playerRole === 'white') {
+        roomRef.update({ 'players.whiteId': null });
+    } else {
+        roomRef.update({
+            spectators: firebase.firestore.FieldValue.arrayRemove(clientId)
+        });
+    }
+
+    if (roomUnsubscribe) {
+        roomUnsubscribe();
+        roomUnsubscribe = null;
+    }
+
+    // Reset Local State
+    roomId = null;
+    playerRole = null;
+
+    // Update UI
+    document.getElementById('room-info').classList.add('hidden');
+    document.getElementById('room-list').classList.remove('hidden');
+    statusElement.innerHTML = '請選擇房間加入';
+    boardElement.innerHTML = ''; // Clear board
+}
+
+function bindRoomListener() {
+    if (!roomId) return;
+
+    roomUnsubscribe = db.collection('rooms').doc(roomId)
+        .onSnapshot((doc) => {
+            if (!doc.exists) {
+                // Room deleted or something wrong
+                return;
+            }
+            const data = doc.data();
+
+            // Sync Board
+            syncBoard(data.board);
+
+            // Sync Game State
+            currentPlayer = data.currentPlayer;
+            gameOver = data.gameOver;
+
+            // Update Status Text
+            if (gameOver) {
+                statusElement.innerHTML = `<span class="player-turn" style="color: ${currentPlayer === 'black' ? '#000' : '#888'}">${getPlayerName(currentPlayer)} 獲勝！</span>`;
+            } else {
+                updateStatus();
+            }
+
+            // Show "Start Game" button only if 2 players are present
+            const startBtn = document.getElementById('online-start-btn');
+            if (data.players.blackId && data.players.whiteId) {
+                startBtn.classList.remove('hidden');
+            } else {
+                startBtn.classList.add('hidden');
+            }
+
+        }, (error) => {
+            console.error("Room listener error:", error);
+        });
+}
+
+function syncBoard(remoteBoard) {
+    if (!remoteBoard) return;
+
+    const cells = document.querySelectorAll('.cell');
+    if (cells.length === 0) {
+        createBoard();
+    }
+
+    board = remoteBoard; // Update local data reference
+
+    // Re-render stones
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const val = board[r][c];
+            const cell = document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`);
+            if (cell) {
+                cell.innerHTML = ''; // Clear existing stone
+                if (val) {
+                    const stone = document.createElement('div');
+                    stone.classList.add('stone', val);
+                    cell.appendChild(stone);
+                }
+            }
+        }
+    }
+}
+
+function startOnlineGame() {
+    if (!roomId) return;
+
+    const roomRef = db.collection('rooms').doc(roomId);
+    roomRef.update({
+        board: Array(15).fill(null).map(() => Array(15).fill(null)),
+        currentPlayer: 'black',
+        gameOver: false,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+}
+
+function listenToRoomCounts() {
+    ['room1', 'room2', 'room3'].forEach(rid => {
+        db.collection('rooms').doc(rid).onSnapshot(doc => {
+            const countSpan = document.getElementById(`${rid}-count`);
+            if (countSpan) {
+                if (doc.exists) {
+                    const data = doc.data();
+                    let pCount = 0;
+                    if (data.players && data.players.blackId) pCount++;
+                    if (data.players && data.players.whiteId) pCount++;
+                    countSpan.textContent = `(${pCount}/2)`;
+                } else {
+                    countSpan.textContent = `(0/2)`;
+                }
+            }
+        });
+    });
+}
+
+// Start listening for room counts immediately
+listenToRoomCounts();
