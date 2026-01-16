@@ -115,24 +115,36 @@ function handleCellClick(row, col) {
             const data = doc.data();
             if (data.gameOver) throw "Game is over";
             if (data.currentPlayer !== playerRole) throw "Not your turn";
-            if (data.board[row][col] !== null) throw "Cell occupied";
 
-            // Prepare new board state
-            const newBoard = data.board; // deep copy used by Firestore? No, but we modify it.
-            // Firestore data calls return JS objects. modifying data.board modifies the object.
-            // We need to be careful? Actually it's fine to modify 'data' object if we write it back.
-            newBoard[row][col] = playerRole;
+            // Check occupancy using 1D index
+            const index = row * BOARD_SIZE + col;
+            if (data.board[index] !== null) throw "Cell occupied";
 
-            const isWin = checkWin(row, col, playerRole, true, newBoard); // usage of helper with new board
+            // Prepare new board state (1D array)
+            const newBoard1D = [...data.board];
+            newBoard1D[index] = playerRole;
+
+            // To check win, we need to temporarily construct a 2D board or use the 1D array
+            // But our checkWin helper expects a 2D array by default or boardState.
+            // Let's create a temporary 2D board for checkWin for simplicity and safety
+            const tempBoard2D = [];
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                const rowArr = [];
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    rowArr.push(newBoard1D[r * BOARD_SIZE + c]);
+                }
+                tempBoard2D.push(rowArr);
+            }
+
+            const isWin = checkWin(row, col, playerRole, true, tempBoard2D);
 
             const updates = {
-                board: newBoard,
+                board: newBoard1D,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
 
             if (isWin) {
                 updates.gameOver = true;
-                // wins are handled by update listener
             } else {
                 updates.currentPlayer = (playerRole === 'black') ? 'white' : 'black';
             }
@@ -522,6 +534,10 @@ function joinRoom(selectedRoomId) {
     document.getElementById('room-info').classList.remove('hidden');
     document.getElementById('current-room-id').textContent = roomId;
 
+    // Ensure board is visible immediately (empty state)
+    boardElement.innerHTML = '';
+    createBoard();
+
     const roomRef = db.collection('rooms').doc(roomId);
 
     db.runTransaction(async (transaction) => {
@@ -529,8 +545,9 @@ function joinRoom(selectedRoomId) {
 
         if (!doc.exists) {
             // Create room if not exists
+            // Fix: Use 1D array for board to avoid Firestore "Nested arrays not supported" error
             transaction.set(roomRef, {
-                board: Array(15).fill(null).map(() => Array(15).fill(null)),
+                board: Array(15 * 15).fill(null), // 1D array 225 items
                 currentPlayer: 'black',
                 gameOver: false,
                 players: { blackId: null, whiteId: null },
@@ -566,7 +583,7 @@ function joinRoom(selectedRoomId) {
         bindRoomListener();
     }).catch((error) => {
         console.error("Join room failed: ", error);
-        alert("加入了房間失敗，請稍後再試。");
+        alert("加入了房間失敗: " + error.message);
         setMode('online'); // Reset UI
     });
 }
@@ -649,12 +666,15 @@ function syncBoard(remoteBoard) {
         createBoard();
     }
 
-    board = remoteBoard; // Update local data reference
+    // Reconstruct 2D board from 1D remoteBoard
+    // remoteBoard is 1D array of length 225
 
-    // Re-render stones
     for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
-            const val = board[r][c];
+            const index = r * BOARD_SIZE + c;
+            const val = remoteBoard[index];
+            board[r][c] = val; // Update local 2D state
+
             const cell = document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`);
             if (cell) {
                 cell.innerHTML = ''; // Clear existing stone
@@ -673,7 +693,7 @@ function startOnlineGame() {
 
     const roomRef = db.collection('rooms').doc(roomId);
     roomRef.update({
-        board: Array(15).fill(null).map(() => Array(15).fill(null)),
+        board: Array(15 * 15).fill(null), // Reset to 1D array
         currentPlayer: 'black',
         gameOver: false,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
