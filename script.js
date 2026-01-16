@@ -1,3 +1,19 @@
+// Test Firebase function
+async function testFirebase() {
+    try {
+        const docRef = await db.collection("debug").add({
+            message: "Hello Firebase",
+            time: Date.now()
+        });
+        console.log("testFirebase success: Document written with ID: ", docRef.id);
+    } catch (e) {
+        console.error("testFirebase error: ", e);
+    }
+}
+
+// Perform test write
+testFirebase();
+
 const BOARD_SIZE = 15;
 const boardElement = document.getElementById('board');
 const statusElement = document.getElementById('status');

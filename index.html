@@ -23,6 +23,29 @@
         <div id="board"></div>
         <button id="reset-btn" onclick="resetGame()">重新開始</button>
     </main>
+    <!-- Firebase App (the core Firebase SDK) is always required and must be listed first -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <!-- Add Firebase products that you want to use -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDtXZSRNucuIfScF3qI8wMHkxyY6GQ",
+            authDomain: "gomoku-85ab0.firebaseapp.com",
+            projectId: "gomoku-85ab0",
+            storageBucket: "gomoku-85ab0.firebasestorage.app",
+            messagingSenderId: "1022982066439",
+            appId: "1:1022982066439:web:97484bb0b67e3bd01dae12",
+            measurementId: "G-6478SRPLQ6"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+
+        // Initialize Cloud Firestore and expose global db
+        const db = firebase.firestore();
+    </script>
+
     <script src="script.js"></script>
 </body>
 
