@@ -12,6 +12,14 @@
     <main>
         <h1>五子棋</h1>
         <div id="status">當前回合：<span class="player-turn">黑子</span></div>
+        <div class="controls">
+            <label for="difficulty">難度：</label>
+            <select id="difficulty">
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard" selected>Hard</option>
+            </select>
+        </div>
         <div id="board"></div>
         <button id="reset-btn" onclick="resetGame()">重新開始</button>
     </main>

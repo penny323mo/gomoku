@@ -9,6 +9,16 @@ let board = [];
 let currentPlayer = 'black';
 let gameOver = false;
 let isVsAI = true; // AI mode enabled by default
+let difficulty = 'hard';
+
+document.addEventListener('DOMContentLoaded', () => {
+    const difficultySelect = document.getElementById('difficulty');
+    if (difficultySelect) {
+        difficultySelect.addEventListener('change', (e) => {
+            difficulty = e.target.value;
+        });
+    }
+});
 
 function resetGame() {
     // Clear board state
@@ -86,7 +96,15 @@ function handleCellClick(row, col) {
 function makeAIMove() {
     if (gameOver) return;
 
-    let move = findBestMove();
+    let move;
+    if (difficulty === 'easy') {
+        move = findEasyMove();
+    } else if (difficulty === 'medium') {
+        move = findMediumMove();
+    } else {
+        move = findBestMove(); // Hard (Original)
+    }
+
     if (move) {
         placeStone(move.r, move.c);
         if (checkWin(move.r, move.c, currentPlayer)) {
@@ -97,30 +115,86 @@ function makeAIMove() {
     }
 }
 
-// Heuristic Scoring System
+// EASY: Only block immediate 4-in-a-row threats. Otherwise random.
+function findEasyMove() {
+    // 1. Check for immediate threats (defense score high)
+    // We scan all empty spots. If 'black' (human) has a high score there, we block.
+    // Threat threshold: Dead 4 requires blocking (Score 10000)
+
+    let candidates = [];
+
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            if (board[r][c] === null) {
+                // Check if human wins or has 4
+                const defenseScore = evaluatePoint(r, c, 'black');
+                if (defenseScore >= 10000) {
+                    return { r, c }; // Must block immediately
+                }
+                candidates.push({ r, c });
+            }
+        }
+    }
+
+    // 2. No immediate threat, pick random
+    if (candidates.length > 0) {
+        return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+    return { r: 7, c: 7 };
+}
+
+// MEDIUM: Pick from top 5 best moves
+function findMediumMove() {
+    let allMoves = [];
+
+    // Evaluate every empty cell and store score
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            if (board[r][c] === null) {
+                const attackScore = evaluatePoint(r, c, 'white');
+                const defenseScore = evaluatePoint(r, c, 'black');
+
+                // Same scoring logic as hard
+                let totalScore = attackScore + defenseScore;
+
+                // Heuristic
+                const centerDist = Math.abs(r - 7) + Math.abs(c - 7);
+                totalScore -= centerDist;
+
+                allMoves.push({ r, c, score: totalScore });
+            }
+        }
+    }
+
+    // Sort descending
+    allMoves.sort((a, b) => b.score - a.score);
+
+    // Pick from top 5 (or fewer if not enough available)
+    const topN = 5;
+    const poolSize = Math.min(allMoves.length, topN);
+
+    if (poolSize > 0) {
+        const randomIndex = Math.floor(Math.random() * poolSize);
+        return allMoves[randomIndex];
+    }
+
+    return { r: 7, c: 7 };
+}
+
+// HARD: Best Move (Original Logic, slightly cleaned up)
 function findBestMove() {
     let bestScore = -Infinity;
     let bestMoves = [];
 
-    // Evaluate every empty cell
     for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
             if (board[r][c] === null) {
-                // Score for AI (Attack)
                 const attackScore = evaluatePoint(r, c, 'white');
-                // Score for Player (Defense)
                 const defenseScore = evaluatePoint(r, c, 'black');
-
-                // Final score logic:
-                // We value winning slightly more than blocking, but if opponent has a killer move, we must block.
-                // However, evaluatePoint returns very high numbers for threats.
-                // We sum them because a move might both attack AND defend.
-                // We can weight defense slightly higher to be safe, or just sum them.
                 let totalScore = attackScore + defenseScore;
 
-                // Tie-breaking with position heuristic (slightly prefer center)
                 const centerDist = Math.abs(r - 7) + Math.abs(c - 7);
-                totalScore -= centerDist; // minuscule penalty for being far from center
+                totalScore -= centerDist;
 
                 if (totalScore > bestScore) {
                     bestScore = totalScore;
@@ -136,8 +210,6 @@ function findBestMove() {
         const randomIndex = Math.floor(Math.random() * bestMoves.length);
         return bestMoves[randomIndex];
     }
-
-    // Fallback (shouldn't happen on empty board properly handled above)
     return { r: 7, c: 7 };
 }
 

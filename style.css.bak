@@ -108,18 +108,3 @@ h1 {
 #reset-btn:hover {
     background-color: #2980b9;
 }
-
-.controls {
-    margin-bottom: 20px;
-    font-size: 1.1rem;
-    color: #333;
-}
-
-.controls select {
-    padding: 5px 10px;
-    font-size: 1rem;
-    border-radius: 5px;
-    border: 1px solid #ccc;
-    cursor: pointer;
-    background-color: white;
-}
