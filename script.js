@@ -2160,31 +2160,48 @@ function renderCarousel() {
     updateCarousel();
 }
 
+
+
 function updateCarousel() {
     const track = document.getElementById('game-carousel');
     if (!track) return;
 
-    const cardWidth = 280; // Card width
-    const gap = 30; // Gap between cards
-    const moveAmount = (cardWidth + gap) * currentSlide;
+    // Get fresh dimensions
+    const container = document.querySelector('.carousel-container');
+    const containerWidth = container ? container.offsetWidth : window.innerWidth;
 
-    track.style.transform = `translateX(-${moveAmount}px)`;
+    // Matched with CSS
+    const cardWidth = 280;
+    const gap = 30;
+
+    // Calculate position to center the current slide
+    // position = centerOffset - (slideOffset)
+    const centerOffset = (containerWidth / 2) - (cardWidth / 2);
+    const slideOffset = currentSlide * (cardWidth + gap);
+    const moveAmount = centerOffset - slideOffset;
+
+    track.style.transform = `translateX(${moveAmount}px)`;
+
+    // Update Active Card Style
+    const cards = document.querySelectorAll('.game-hub-card');
+    cards.forEach((card, index) => {
+        if (index === currentSlide) {
+            card.classList.add('active-card');
+            card.style.opacity = '1';
+            card.style.transform = 'scale(1.05)';
+        } else {
+            card.classList.remove('active-card');
+            card.style.opacity = '0.5'; // Dim others
+            card.style.transform = 'scale(0.9)';
+        }
+    });
 
     // Manage button states
     const prevBtn = document.querySelector('.prev-btn');
     const nextBtn = document.querySelector('.next-btn');
 
-    // Calculate max slide
-    // For 5 items, indices are 0,1,2,3,4
-    // If we show 1 card (mobile), max index is 4
-    // If we show 3 cards (desktop), max index is 2
-
-    const container = document.querySelector('.carousel-track-container');
-    const containerWidth = container ? container.offsetWidth : window.innerWidth;
-
-    // Estimate visible cards
-    const visibleCards = Math.floor((containerWidth + gap) / (cardWidth + gap));
-    const maxSlide = Math.max(0, games.length - Math.max(1, visibleCards));
+    // Simple 0 to length-1 bounds for centered view
+    const maxSlide = games.length - 1;
 
     if (prevBtn) {
         prevBtn.style.opacity = currentSlide === 0 ? '0.3' : '1';
@@ -2199,14 +2216,7 @@ function updateCarousel() {
 }
 
 function nextGame() {
-    const cardWidth = 280;
-    const gap = 30;
-    const container = document.querySelector('.carousel-track-container');
-    const containerWidth = container ? container.offsetWidth : window.innerWidth;
-    const visibleCards = Math.floor((containerWidth + gap) / (cardWidth + gap));
-    const maxSlide = Math.max(0, games.length - Math.max(1, visibleCards));
-
-    if (currentSlide < maxSlide) {
+    if (currentSlide < games.length - 1) {
         currentSlide++;
         updateCarousel();
     }
