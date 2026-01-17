@@ -1083,6 +1083,7 @@ const PennyCrush = {
     MAX_RAINBOWS_PER_TURN: 1,
     bombsSpawnedThisTurn: 0,
     rainbowsSpawnedThisTurn: 0,
+    isPlayerInitiatedTurn: false, // Track if turn came from player swap
 
     // Combo system
     comboCount: 0,
@@ -1537,6 +1538,7 @@ const PennyCrush = {
         // Reset special spawn counters for this move
         this.bombsSpawnedThisTurn = 0;
         this.rainbowsSpawnedThisTurn = 0;
+        this.isPlayerInitiatedTurn = true; // Player initiated this turn
 
         // Swap data
         const temp = this.grid[r1][c1];
@@ -1611,6 +1613,9 @@ const PennyCrush = {
     },
 
     detonateBombs: async function (bombs, allowSpecialSpawn = false) {
+        // Bomb explosions are NOT player-initiated for spawn purposes
+        this.isPlayerInitiatedTurn = false;
+
         // Create a Set of tiles to clear
         const toClear = new Set();
 
@@ -1743,12 +1748,16 @@ const PennyCrush = {
     },
 
     finalizeTurn: function () {
-        // Check for Bomb Reward
-        if (this.turnClearedCount >= 6) {
+        // Check for Bomb Reward - ONLY from player-initiated turns with safety cap
+        if (this.isPlayerInitiatedTurn &&
+            this.turnClearedCount >= 6 &&
+            this.bombsSpawnedThisTurn < this.MAX_BOMBS_PER_TURN) {
             this.spawnBomb();
+            this.bombsSpawnedThisTurn++;
         }
         this.isProcessing = false;
-        this.turnClearedCount = 0; // Reset safely
+        this.turnClearedCount = 0;
+        this.isPlayerInitiatedTurn = false; // Reset flag
     },
 
     spawnBomb: function () {
@@ -1987,6 +1996,9 @@ const PennyCrush = {
 
     // --- Generic Tile Clear with Animation ---
     clearTiles: async function (tileSet, pointsPerTile, allowSpecialSpawn = false) {
+        // Special tile explosions are NOT player-initiated for spawn purposes
+        this.isPlayerInitiatedTurn = false;
+
         // Visualize
         tileSet.forEach(str => {
             const [r, c] = str.split(',').map(Number);
