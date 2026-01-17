@@ -552,6 +552,7 @@ function joinRoom(selectedRoomId) {
                 gameOver: false,
                 players: { blackId: null, whiteId: null },
                 spectators: [],
+                heartbeats: { [clientId]: firebase.firestore.FieldValue.serverTimestamp() }, // Init heartbeat
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -563,15 +564,27 @@ function joinRoom(selectedRoomId) {
 
         if (data.players.blackId === clientId || data.players.blackId === null) {
             assignedRole = 'black';
-            transaction.update(roomRef, { 'players.blackId': clientId });
+            transaction.update(roomRef, {
+                'players.blackId': clientId,
+                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
+            });
         } else if (data.players.whiteId === clientId || data.players.whiteId === null) {
             assignedRole = 'white';
-            transaction.update(roomRef, { 'players.whiteId': clientId });
+            transaction.update(roomRef, {
+                'players.whiteId': clientId,
+                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
+            });
         } else {
             // Add to spectators if not already there
             if (!data.spectators.includes(clientId)) {
                 transaction.update(roomRef, {
-                    spectators: firebase.firestore.FieldValue.arrayUnion(clientId)
+                    spectators: firebase.firestore.FieldValue.arrayUnion(clientId),
+                    [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } else {
+                // Just update heartbeat if already there
+                transaction.update(roomRef, {
+                    [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
                 });
             }
         }
@@ -581,6 +594,7 @@ function joinRoom(selectedRoomId) {
         playerRole = result.role;
         document.getElementById('my-role').textContent = getPlayerName(playerRole) || '觀眾';
         bindRoomListener();
+        startHeartbeat(); // Start heartbeat loop
     }).catch((error) => {
         console.error("Join room failed: ", error);
         alert("加入了房間失敗: " + error.message);
@@ -589,6 +603,7 @@ function joinRoom(selectedRoomId) {
 }
 
 function leaveRoom() {
+    stopHeartbeat(); // Stop heartbeat loop
     if (!roomId) return;
 
     const roomRef = db.collection('rooms').doc(roomId);
@@ -700,20 +715,152 @@ function startOnlineGame() {
     });
 }
 
+// --- Heartbeat Logic ---
+let heartbeatInterval = null;
+
+function startHeartbeat() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+    // Immediate heartbeat
+    sendHeartbeat();
+
+    // Loop every 5 seconds
+    heartbeatInterval = setInterval(sendHeartbeat, 5000);
+}
+
+function stopHeartbeat() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+}
+
+function sendHeartbeat() {
+    if (!roomId || !clientId) return;
+
+    // Update simple heartbeat timestamp map
+    // Using merge: true equivalent via update
+    const roomRef = db.collection('rooms').doc(roomId);
+
+    // Use dot notation to update nested field in 'heartbeats' map
+    // We need to ensure the key exists.
+    // Actually, 'heartbeats' is a map field. 
+    // update({ ['heartbeats.' + clientId]: ... })
+
+    const updateData = {};
+    updateData[`heartbeats.${clientId}`] = firebase.firestore.FieldValue.serverTimestamp();
+
+    roomRef.update(updateData).catch(err => {
+        // Silent fail (network glitches happen)
+        console.warn("Heartbeat failed:", err);
+    });
+}
+
 function listenToRoomCounts() {
     ['room1', 'room2', 'room3'].forEach(rid => {
         db.collection('rooms').doc(rid).onSnapshot(doc => {
             const countSpan = document.getElementById(`${rid}-count`);
-            if (countSpan) {
-                if (doc.exists) {
-                    const data = doc.data();
-                    let pCount = 0;
-                    if (data.players && data.players.blackId) pCount++;
-                    if (data.players && data.players.whiteId) pCount++;
-                    countSpan.textContent = `(${pCount}/2)`;
-                } else {
-                    countSpan.textContent = `(0/2)`;
+            if (!doc.exists) {
+                if (countSpan) countSpan.textContent = `(0/2)`;
+                return;
+            }
+
+            const data = doc.data();
+
+            // --- Cleanup inactive players ---
+            // Only perform cleanup if we are "looking" at this room (snapshot active)
+            // To prevent all clients from writing simultaneously, maybe just let it happen (last write wins)
+            // Or only run if we are in this room? No, we want to clean 'other' rooms too so count is correct.
+            // But writing to all rooms from all clients is cost-heavy.
+            // Let's rely on the fact that these are fixed rooms.
+            // Simple approach: Check last active. If > 15 seconds, remove.
+
+            const now = Date.now();
+            const MAX_INACTIVE_TIME = 15000; // 15 seconds
+
+            let pCount = 0;
+            const updates = {};
+            let needUpdate = false;
+
+            if (data.heartbeats) {
+                // Check Black
+                if (data.players && data.players.blackId) {
+                    const blackTs = data.heartbeats[data.players.blackId];
+                    if (blackTs) {
+                        // Check if valid timestamp (it might be null momentarily)
+                        // Firestore Timestamp to millis: blackTs.toMillis()
+                        if (blackTs.toMillis && (now - blackTs.toMillis() > MAX_INACTIVE_TIME)) {
+                            // Timeout Black
+                            updates['players.blackId'] = null;
+                            updates[`heartbeats.${data.players.blackId}`] = firebase.firestore.FieldValue.delete();
+                            needUpdate = true;
+                        } else {
+                            pCount++;
+                        }
+                    } else {
+                        // No heartbeat record but player is set? 
+                        // Maybe just joined? Give grace period? 
+                        // If it's been null for a while... assume stale if created long ago. 
+                        // For simplicity, if we have player ID but no heartbeat entry, we might want to clean it up 
+                        // UNLESS they just joined (race condition).
+                        // Let's assume joining sets heartbeat immediately.
+                        // If missing, count as active (optimistic) or ignore?
+                        // Let's count as valid to be safe, but maybe 0 is better.
+                        // Actually, joinRoom sets heartbeat.
+                        pCount++;
+                    }
                 }
+
+                // Check White
+                if (data.players && data.players.whiteId) {
+                    const whiteTs = data.heartbeats[data.players.whiteId];
+                    if (whiteTs) {
+                        if (whiteTs.toMillis && (now - whiteTs.toMillis() > MAX_INACTIVE_TIME)) {
+                            // Timeout White
+                            updates['players.whiteId'] = null;
+                            updates[`heartbeats.${data.players.whiteId}`] = firebase.firestore.FieldValue.delete();
+                            needUpdate = true;
+                        } else {
+                            pCount++;
+                        }
+                    } else {
+                        pCount++;
+                    }
+                }
+
+                // Check Spectators
+                if (data.spectators && data.spectators.length > 0) {
+                    const activeSpectators = [];
+                    let specChanged = false;
+                    data.spectators.forEach(specId => {
+                        const specTs = data.heartbeats[specId];
+                        if (specTs && specTs.toMillis && (now - specTs.toMillis() <= MAX_INACTIVE_TIME)) {
+                            activeSpectators.push(specId);
+                        } else {
+                            // Time out spectator
+                            updates[`heartbeats.${specId}`] = firebase.firestore.FieldValue.delete();
+                            specChanged = true;
+                            needUpdate = true;
+                        }
+                    });
+
+                    if (specChanged) {
+                        updates['spectators'] = activeSpectators; // rewriting entire array safe here if we trust this snapshot
+                    }
+                }
+            } else {
+                // No heartbeats map yet? Just count players
+                if (data.players && data.players.blackId) pCount++;
+                if (data.players && data.players.whiteId) pCount++;
+            }
+
+            if (needUpdate) {
+                // Perform Cleanup
+                db.collection('rooms').doc(rid).update(updates).catch(console.error);
+            }
+
+            if (countSpan) {
+                countSpan.textContent = `(${pCount}/2)`;
             }
         });
     });
@@ -721,3 +868,13 @@ function listenToRoomCounts() {
 
 // Start listening for room counts immediately
 listenToRoomCounts();
+
+// Graceful exit
+window.addEventListener('beforeunload', () => {
+    if (mode === 'online' && roomId) {
+        // Try to leave synchronously? 
+        // Navigator.sendBeacon is better but Firestore doesn't support it directly easily.
+        // We will just try best effort leaveRoom.
+        leaveRoom();
+    }
+});
