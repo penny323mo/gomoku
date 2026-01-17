@@ -1185,6 +1185,177 @@ const PennyCrush = {
         }
     },
 
+
+
+    applyGravity: async function () {
+        // Move tiles down
+        for (let c = 0; c < this.gridSize; c++) {
+            let emptyCount = 0;
+            for (let r = this.gridSize - 1; r >= 0; r--) {
+                if (this.grid[r][c] === null) {
+                    emptyCount++;
+                } else if (emptyCount > 0) {
+                    // Move down
+                    this.grid[r + emptyCount][c] = this.grid[r][c];
+                    this.grid[r][c] = null;
+
+                    // Simple logic: we just moved one stone. 
+                    // To support full cascade correctly in one pass is tricky.
+                    // Actually, simpler approach: collect column, filter nulls, prepend new.
+                }
+            }
+
+            // Refill top
+            for (let r = 0; r < emptyCount; r++) {
+                this.grid[r][c] = this.getRandomColor();
+            }
+        }
+
+        this.renderGrid();
+        // Allow a small delay for "falling" viz if we animation later, 
+        // for now instantaneous logic update.
+        await new Promise(r => setTimeout(r, 200));
+    },
+
+    // --- Shuffle Feature ---
+    shuffleRemaining: 3,
+    // Bomb State
+    turnClearedCount: 0,
+
+    shuffleBoard: function () {
+        if (this.isProcessing || this.shuffleRemaining <= 0) return;
+
+        // Decrement and Update UI
+        this.shuffleRemaining--;
+        this.updateShuffleBtn();
+
+        // 1. Collect all non-null tiles (flatten)
+        let tiles = [];
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                if (this.grid[r][c]) {
+                    tiles.push(this.grid[r][c]);
+                } else {
+                    tiles.push(this.getRandomColor());
+                }
+            }
+        }
+
+        // 2. Fisher-Yates Shuffle
+        let attempts = 0;
+        let solvable = false;
+
+        while (attempts < 10 && !solvable) {
+            // Shuffle array
+            for (let i = tiles.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
+            }
+
+            // Fill Grid temporarily
+            let idx = 0;
+            for (let r = 0; r < this.gridSize; r++) {
+                for (let c = 0; c < this.gridSize; c++) {
+                    this.grid[r][c] = tiles[idx++];
+                }
+            }
+
+            // Check solvability
+            if (this.hasPossibleMove()) {
+                solvable = true;
+            }
+            attempts++;
+        }
+
+        // 3. Render
+        this.renderGrid();
+
+        const matches = this.findMatches();
+        if (matches.length > 0) {
+            this.processMatches(matches);
+        }
+    },
+
+    updateShuffleBtn: function () {
+        const btn = document.getElementById('btn-shuffle');
+        if (!btn) return;
+        btn.textContent = `Shuffle (${this.shuffleRemaining})`;
+        if (this.shuffleRemaining <= 0) {
+            btn.disabled = true;
+            btn.classList.add('disabled');
+        } else {
+            btn.disabled = false;
+            btn.classList.remove('disabled');
+        }
+    },
+
+    hasPossibleMove: function () {
+        // Horizontal
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize - 1; c++) {
+                // If either is a bomb, it's a valid move!
+                if (this.isBomb(r, c) || this.isBomb(r, c + 1)) return true;
+
+                this.tempSwap(r, c, r, c + 1);
+                const hasMatch = this.checkMatchAt(r, c) || this.checkMatchAt(r, c + 1);
+                this.tempSwap(r, c, r, c + 1);
+                if (hasMatch) return true;
+            }
+        }
+        // Vertical
+        for (let r = 0; r < this.gridSize - 1; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                // If either is a bomb, it's a valid move!
+                if (this.isBomb(r, c) || this.isBomb(r + 1, c)) return true;
+
+                this.tempSwap(r, c, r + 1, c);
+                const hasMatch = this.checkMatchAt(r, c) || this.checkMatchAt(r + 1, c);
+                this.tempSwap(r, c, r + 1, c);
+                if (hasMatch) return true;
+            }
+        }
+        return false;
+    },
+
+    tempSwap: function (r1, c1, r2, c2) {
+        const temp = this.grid[r1][c1];
+        this.grid[r1][c1] = this.grid[r2][c2];
+        this.grid[r2][c2] = temp;
+    },
+
+    checkMatchAt: function (r, c) {
+        const color = this.grid[r][c];
+        if (!color || color === 'pc-bomb') return false; // Bombs don't match colors
+
+        // Horiz Check
+        let hCount = 1;
+        let k = c - 1;
+        while (k >= 0 && this.grid[r][k] === color) { hCount++; k--; }
+        k = c + 1;
+        while (k < this.gridSize && this.grid[r][k] === color) { hCount++; k++; }
+        if (hCount >= 3) return true;
+
+        // Vertical scan
+        let vCount = 1;
+        k = r - 1;
+        while (k >= 0 && this.grid[k][c] === color) { vCount++; k--; }
+        k = r + 1;
+        while (k < this.gridSize && this.grid[k][c] === color) { vCount++; k++; }
+        if (vCount >= 3) return true;
+
+        return false;
+    },
+
+    isBomb: function (r, c) {
+        return this.grid[r][c] === 'pc-bomb';
+    },
+
+    // --- Bomb Logic ---
+
+    // Updated handleTileClick for Bomb interaction is not needed if logic is in swapTiles ?
+    // Actually handleTileClick calls swapTiles which calls process.
+    // We need to intercept standard matching if a bomb is used.
+
     handleTileClick: function (r, c) {
         if (this.isProcessing) return;
 
@@ -1231,11 +1402,48 @@ const PennyCrush = {
 
         this.renderGrid();
 
-        // Check match
+        // Check Bomb Trigger
+        const isBomb1 = this.grid[r1][c1] === 'pc-bomb';
+        const isBomb2 = this.grid[r2][c2] === 'pc-bomb';
+
+        if (isBomb1 || isBomb2) {
+            // Valid switch! Detonate!
+            // Wait for visual swap
+            await new Promise(r => setTimeout(r, 200));
+
+            this.turnClearedCount = 0; // Reset for this move
+
+            // Collect bombs to detonate
+            const bombsToDetonate = [];
+            if (isBomb1) bombsToDetonate.push({ r: r1, c: c1 });
+            if (isBomb2) bombsToDetonate.push({ r: r2, c: c2 });
+
+            await this.detonateBombs(bombsToDetonate);
+
+            // After bomb, check regular matches too? 
+            // Usually bomb destroys things, then gravity, then matches.
+            // detonateBombs triggers gravity and match loop.
+            return;
+        }
+
+        // Normal Match Check
         const matches = this.findMatches();
 
         if (matches.length > 0) {
+            this.turnClearedCount = 0; // Reset count for this new move
             await this.processMatches(matches);
+
+            // After cascade is ALL done (in processMatches recursion), 
+            // check for Bomb Spawn reward?
+            // processMatches calls applyGravity then findMatches...
+            // We need a way to know "Everything Settled".
+            // Since processMatches is recursive/async, we can't easily do it "after" strictly here without refactor.
+            // BUT: We can check turnClearedCount at the end of the chain.
+            // Or better: Inside processMatches, accumulate.
+            // And logic to spawn bomb?
+            // Let's create a 'settle' phase. 
+            // Actually, we can just check 'turnClearedCount' inside processMatches after gravity?
+            // No, we should do it when NO MORE matches found.
         } else {
             // Revert animation
             const t1 = document.querySelector(`.pc-tile[data-r="${r1}"][data-c="${c1}"]`);
@@ -1255,19 +1463,136 @@ const PennyCrush = {
         }
     },
 
+    detonateBombs: async function (bombs) {
+        // Create a Set of tiles to clear
+        const toClear = new Set();
+
+        bombs.forEach(b => {
+            toClear.add(`${b.r},${b.c}`);
+            // Neighbors
+            [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(offset => {
+                const nr = b.r + offset[0];
+                const nc = b.c + offset[1];
+                if (nr >= 0 && nr < this.gridSize && nc >= 0 && nc < this.gridSize) {
+                    toClear.add(`${nr},${nc}`);
+                }
+            });
+        });
+
+        // Visualize
+        toClear.forEach(str => {
+            const [r, c] = str.split(',').map(Number);
+            const tile = document.querySelector(`.pc-tile[data-r="${r}"][data-c="${c}"]`);
+            if (tile) tile.classList.add('pc-pop'); // Reuse pop for now
+        });
+
+        await new Promise(r => setTimeout(r, 300));
+
+        // Score
+        this.updateScore(toClear.size * 20); // Bombs worth more?
+        this.turnClearedCount += toClear.size;
+
+        // Clear Data
+        toClear.forEach(str => {
+            const [r, c] = str.split(',').map(Number);
+            this.grid[r][c] = null;
+        });
+
+        // Gravity
+        await this.applyGravity();
+
+        // Resume match checking
+        const newMatches = this.findMatches();
+        if (newMatches.length > 0) {
+            await this.processMatches(newMatches);
+        } else {
+            // Settle
+            this.finalizeTurn();
+        }
+    },
+
+    processMatches: async function (matches) {
+        // Highlight Matches
+        matches.forEach(m => {
+            const tile = document.querySelector(`.pc-tile[data-r="${m.r}"][data-c="${m.c}"]`);
+            if (tile) tile.classList.add('pc-pop');
+        });
+
+        await new Promise(r => setTimeout(r, 300));
+
+        // Remove and Score
+        this.updateScore(matches.length * 10);
+        this.turnClearedCount += matches.length;
+
+        // Remove from grid (set to null)
+        matches.forEach(m => {
+            this.grid[m.r][m.c] = null;
+        });
+
+        // Gravity
+        await this.applyGravity();
+
+        // Check new matches
+        const newMatches = this.findMatches();
+        if (newMatches.length > 0) {
+            await this.processMatches(newMatches);
+        } else {
+            // No more matches -> Turn End
+            this.finalizeTurn();
+        }
+    },
+
+    finalizeTurn: function () {
+        // Check for Bomb Reward
+        if (this.turnClearedCount >= 6) {
+            this.spawnBomb();
+        }
+        this.isProcessing = false;
+        this.turnClearedCount = 0; // Reset safely
+    },
+
+    spawnBomb: function () {
+        // Find a random non-null spot (or null if we messed up)
+        // Prefer non-bomb
+        let attempts = 0;
+        while (attempts < 20) {
+            const r = Math.floor(Math.random() * this.gridSize);
+            const c = Math.floor(Math.random() * this.gridSize);
+            if (this.grid[r][c] && this.grid[r][c] !== 'pc-bomb') {
+                this.grid[r][c] = 'pc-bomb';
+                // Trigger visual update for just this tile? or full render
+                // Let's full render to be safe and clear animation classes
+                this.renderGrid();
+
+                // Add a visual 'spawn' effect?
+                const tile = document.querySelector(`.pc-tile[data-r="${r}"][data-c="${c}"]`);
+                if (tile) {
+                    tile.style.animation = 'none';
+                    tile.offsetHeight; /* trigger reflow */
+                    tile.classList.add('pc-pop'); // Pulse it
+                }
+                break;
+            }
+            attempts++;
+        }
+    },
+
+    // Updated findMatches to Ignore Bombs
     findMatches: function () {
-        const matches = []; // Array of {r, c} strings "r,c" to avoid duplicates
+        const matches = [];
         const matchedSet = new Set();
+
+        // Helper to check valid color
+        const isValid = (color) => color && color !== 'pc-bomb';
 
         // Horizontal
         for (let r = 0; r < this.gridSize; r++) {
             for (let c = 0; c < this.gridSize - 2; c++) {
                 const color = this.grid[r][c];
-                if (color === this.grid[r][c + 1] && color === this.grid[r][c + 2]) {
+                if (isValid(color) && color === this.grid[r][c + 1] && color === this.grid[r][c + 2]) {
                     matchedSet.add(`${r},${c}`);
                     matchedSet.add(`${r},${c + 1}`);
                     matchedSet.add(`${r},${c + 2}`);
-                    // Check further
                     let k = c + 3;
                     while (k < this.gridSize && this.grid[r][k] === color) {
                         matchedSet.add(`${r},${k}`);
@@ -1281,7 +1606,7 @@ const PennyCrush = {
         for (let c = 0; c < this.gridSize; c++) {
             for (let r = 0; r < this.gridSize - 2; r++) {
                 const color = this.grid[r][c];
-                if (color === this.grid[r + 1][c] && color === this.grid[r + 2][c]) {
+                if (isValid(color) && color === this.grid[r + 1][c] && color === this.grid[r + 2][c]) {
                     matchedSet.add(`${r},${c}`);
                     matchedSet.add(`${r + 1},${c}`);
                     matchedSet.add(`${r + 2},${c}`);
@@ -1300,199 +1625,5 @@ const PennyCrush = {
         });
 
         return matches;
-    },
-
-    processMatches: async function (matches) {
-        // Highlight Matches
-        matches.forEach(m => {
-            const tile = document.querySelector(`.pc-tile[data-r="${m.r}"][data-c="${m.c}"]`);
-            if (tile) tile.classList.add('pc-pop');
-        });
-
-        await new Promise(r => setTimeout(r, 300));
-
-        // Remove and Score
-        this.updateScore(matches.length * 10); // Simple scoring
-
-        // Remove from grid (set to null)
-        matches.forEach(m => {
-            this.grid[m.r][m.c] = null;
-        });
-
-        // Gravity
-        await this.applyGravity();
-
-        // Check new matches
-        const newMatches = this.findMatches();
-        if (newMatches.length > 0) {
-            await this.processMatches(newMatches);
-        } else {
-            this.isProcessing = false;
-        }
-    },
-
-    applyGravity: async function () {
-        // Move tiles down
-        for (let c = 0; c < this.gridSize; c++) {
-            let emptyCount = 0;
-            for (let r = this.gridSize - 1; r >= 0; r--) {
-                if (this.grid[r][c] === null) {
-                    emptyCount++;
-                } else if (emptyCount > 0) {
-                    // Move down
-                    this.grid[r + emptyCount][c] = this.grid[r][c];
-                    this.grid[r][c] = null;
-
-                    // Simple logic: we just moved one stone. 
-                    // To support full cascade correctly in one pass is tricky.
-                    // Actually, simpler approach: collect column, filter nulls, prepend new.
-                }
-            }
-
-            // Refill top
-            for (let r = 0; r < emptyCount; r++) {
-                this.grid[r][c] = this.getRandomColor();
-            }
-        }
-
-        this.renderGrid();
-        // Allow a small delay for "falling" viz if we animation later, 
-        // for now instantaneous logic update.
-        await new Promise(r => setTimeout(r, 200));
-    },
-
-    // --- Shuffle Feature ---
-    shuffleRemaining: 3,
-
-    shuffleBoard: function () {
-        if (this.isProcessing || this.shuffleRemaining <= 0) return;
-
-        // Decrement and Update UI
-        this.shuffleRemaining--;
-        this.updateShuffleBtn();
-
-        // 1. Collect all non-null tiles (flatten)
-        let tiles = [];
-        for (let r = 0; r < this.gridSize; r++) {
-            for (let c = 0; c < this.gridSize; c++) {
-                if (this.grid[r][c]) {
-                    tiles.push(this.grid[r][c]);
-                } else {
-                    // Should rarely occur unless mid-processing, but fill just in case
-                    tiles.push(this.getRandomColor());
-                }
-            }
-        }
-
-        // 2. Fisher-Yates Shuffle
-        // Try shuffling until we find a solvable board or hit limit
-        let attempts = 0;
-        let solvable = false;
-
-        while (attempts < 10 && !solvable) {
-            // Shuffle array
-            for (let i = tiles.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
-            }
-
-            // Fill Grid temporarily
-            let idx = 0;
-            for (let r = 0; r < this.gridSize; r++) {
-                for (let c = 0; c < this.gridSize; c++) {
-                    this.grid[r][c] = tiles[idx++];
-                }
-            }
-
-            // Check solvability
-            if (this.hasPossibleMove()) {
-                solvable = true;
-            }
-            attempts++;
-        }
-
-        // 3. Render
-        this.renderGrid();
-
-        // Optional: Check matches immediately created by shuffle?
-        // Usually, Candy Crush allows this and just processes them.
-        // Let's check matches.
-        const matches = this.findMatches();
-        if (matches.length > 0) {
-            this.processMatches(matches);
-        }
-    },
-
-    updateShuffleBtn: function () {
-        const btn = document.getElementById('btn-shuffle');
-        if (!btn) return;
-        btn.textContent = `Shuffle (${this.shuffleRemaining})`;
-        if (this.shuffleRemaining <= 0) {
-            btn.disabled = true;
-            btn.classList.add('disabled');
-        } else {
-            btn.disabled = false;
-            btn.classList.remove('disabled');
-        }
-    },
-
-    hasPossibleMove: function () {
-        // Simple check: try swapping every horizontal pair and vertical pair
-        // Horizontal
-        for (let r = 0; r < this.gridSize; r++) {
-            for (let c = 0; c < this.gridSize - 1; c++) {
-                // Swap (r,c) and (r,c+1)
-                this.tempSwap(r, c, r, c + 1);
-                const hasMatch = this.checkMatchAt(r, c) || this.checkMatchAt(r, c + 1);
-                this.tempSwap(r, c, r, c + 1); // Swap back
-                if (hasMatch) return true;
-            }
-        }
-        // Vertical
-        for (let r = 0; r < this.gridSize - 1; r++) {
-            for (let c = 0; c < this.gridSize; c++) {
-                // Swap (r,c) and (r+1,c)
-                this.tempSwap(r, c, r + 1, c);
-                const hasMatch = this.checkMatchAt(r, c) || this.checkMatchAt(r + 1, c);
-                this.tempSwap(r, c, r + 1, c); // Swap back
-                if (hasMatch) return true;
-            }
-        }
-        return false;
-    },
-
-    tempSwap: function (r1, c1, r2, c2) {
-        const temp = this.grid[r1][c1];
-        this.grid[r1][c1] = this.grid[r2][c2];
-        this.grid[r2][c2] = temp;
-    },
-
-    checkMatchAt: function (r, c) {
-        const color = this.grid[r][c];
-        if (!color) return false;
-
-        // Horiz Check: (c-2, c-1, c), (c-1, c, c+1), (c, c+1, c+2)
-        // Simplest: check line length at this point
-        // Horizontal scan through this point
-        let hCount = 1;
-        // left
-        let k = c - 1;
-        while (k >= 0 && this.grid[r][k] === color) { hCount++; k--; }
-        // right
-        k = c + 1;
-        while (k < this.gridSize && this.grid[r][k] === color) { hCount++; k++; }
-        if (hCount >= 3) return true;
-
-        // Vertical scan
-        let vCount = 1;
-        // up
-        k = r - 1;
-        while (k >= 0 && this.grid[k][c] === color) { vCount++; k--; }
-        // down
-        k = r + 1;
-        while (k < this.gridSize && this.grid[k][c] === color) { vCount++; k++; }
-        if (vCount >= 3) return true;
-
-        return false;
     }
 };

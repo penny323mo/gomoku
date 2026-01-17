@@ -737,9 +737,35 @@ h1 {
 
 /* PURPLE: RECT */
 .pc-tile.pc-purple .candy-shape {
-    background: radial-gradient(circle at 30% 30%, #e0c3fc 0%, #8e44ad 100%);
+    background: radial-gradient(circle at 30% 30%, #a18cd1 0%, #fbc2eb 100%);
     border-radius: 4px;
     transform: scale(0.9);
+}
+
+/* BOMB TILE */
+.pc-tile.pc-bomb .candy-shape {
+    background: radial-gradient(circle at 30% 30%, #434343 0%, #000000 100%);
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pc-tile.pc-bomb .candy-shape::before {
+    content: '💣';
+    font-size: 1.5rem;
+    /* Relative to tile size? */
+    /* If tile is small, this might be too big. Use em/percent? */
+    font-size: 80%;
+    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+    position: relative;
+    z-index: 2;
+}
+
+/* Remove gloss for bomb? Or keep it? Let's keep it but subtle */
+.pc-tile.pc-bomb .candy-shape::after {
+    opacity: 0.3;
 }
 
 
