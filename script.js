@@ -596,13 +596,13 @@ function joinRoom(selectedRoomId) {
 
         const data = doc.data();
 
-        // Add to spectators by default
         if (!data.spectators.includes(clientId)) {
             transaction.update(roomRef, {
                 spectators: firebase.firestore.FieldValue.arrayUnion(clientId),
                 [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
             });
         } else {
+            // Even if already in, refresh heartbeat to prevent immediate timeout
             transaction.update(roomRef, {
                 [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -635,17 +635,19 @@ function becomePlayer(role) {
             if (data.players.blackId && data.players.blackId !== clientId) throw "Black position taken";
             transaction.update(roomRef, {
                 'players.blackId': clientId,
-                // If we were white previously, free it? usually we just switch. 
-                // But simplified: assuming we were spec or coming from other role.
+                // If we were white, clear it
                 'players.whiteId': (data.players.whiteId === clientId) ? null : data.players.whiteId,
-                'spectators': firebase.firestore.FieldValue.arrayRemove(clientId)
+                'spectators': firebase.firestore.FieldValue.arrayRemove(clientId),
+                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp() // Update heartbeat immediately
             });
         } else if (role === 'white') {
             if (data.players.whiteId && data.players.whiteId !== clientId) throw "White position taken";
             transaction.update(roomRef, {
                 'players.whiteId': clientId,
+                // If we were black, clear it
                 'players.blackId': (data.players.blackId === clientId) ? null : data.players.blackId,
-                'spectators': firebase.firestore.FieldValue.arrayRemove(clientId)
+                'spectators': firebase.firestore.FieldValue.arrayRemove(clientId),
+                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp() // Update heartbeat immediately
             });
         }
     }).then(() => {
@@ -827,8 +829,8 @@ function startHeartbeat() {
     // Immediate heartbeat
     sendHeartbeat();
 
-    // Loop every 5 seconds
-    heartbeatInterval = setInterval(sendHeartbeat, 5000);
+    // Loop every 30 seconds
+    heartbeatInterval = setInterval(sendHeartbeat, 30000);
 }
 
 function stopHeartbeat() {
@@ -869,7 +871,7 @@ function listenToRoomCounts() {
 
             const data = doc.data();
             const now = Date.now();
-            const MAX_INACTIVE_TIME = 15000; // 15 秒 timeout
+            const MAX_INACTIVE_TIME = 60000; // 60 秒 timeout
 
             let pCount = 0;
             const updates = {};
@@ -891,7 +893,10 @@ function listenToRoomCounts() {
                         updates[`heartbeats.${blackId}`] = firebase.firestore.FieldValue.delete();
                         needUpdate = true;
                     } else if (!blackTs) {
-                        // 有 player 冇 heartbeat → 當壞 session，直接清
+                        // If no heartbeat found, give a grace period of 5 seconds (maybe they just joined)
+                        // Actually, transaction sets it. If it's missing, it's a desync.
+                        // But let's be safe: don't auto-kick immediately if data.heartbeats is present but key is missing
+                        // UNLESS we are sure. For now, strict: if map exists but key doesn't, kick.
                         updates['players.blackId'] = null;
                         needUpdate = true;
                     } else {
