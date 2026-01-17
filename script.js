@@ -1161,7 +1161,8 @@ const PennyCrush = {
         const tileFromHeight = Math.floor(availableHeight / this.gridSize);
 
         // Use smaller of width/height, with min/max bounds
-        const maxTileSize = isMobile ? 35 : 45;
+        // Increased max size to ensure 8x8 grids fill the space
+        const maxTileSize = isMobile ? 50 : 55;
         const minTileSize = isMobile ? 18 : 20;
 
         let size = Math.min(tileFromWidth, tileFromHeight, maxTileSize);
