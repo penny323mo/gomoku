@@ -233,64 +233,96 @@ h1 {
     border-radius: 12px;
 }
 
-/* Carousel Container & Layout */
+/* Carousel Container - Layout wrapper */
 .carousel-container {
     position: relative;
     width: 100%;
-    /* Max width sufficient for card + arrows */
-    max-width: 500px;
+    max-width: 1200px;
+    /* Restored wider max-width for visibility */
     margin: 0 auto;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     min-height: 60vh;
-    padding: 0 60px;
-    /* Space for arrows */
+    padding: 0;
+    /* Arrows handled via absolute positioning */
 }
 
+/* Scrollable Track Container */
 .carousel-track-container {
-    overflow: hidden;
-    /* Exactly card width to mask neighbors */
-    width: 280px;
-    max-width: 280px;
-    position: relative;
-    padding: 40px 0;
-    /* Vertical space for shadows/lift */
-    /* Center it */
-    margin: 0 auto;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+
+    /* Center the first and last items */
+    /* 50% of viewport - half card width (140px) */
+    padding-inline: calc(50% - 140px);
+    box-sizing: border-box;
+
+    /* Hide scrollbar */
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE/Edge */
+
+    /* Ensure padding works for scroll end */
+    display: flex;
+}
+
+.carousel-track-container::-webkit-scrollbar {
+    display: none;
 }
 
 .carousel-track {
     display: flex;
-    padding: 0;
+    gap: 30px;
+    /* Visible gap between cards */
+    padding: 40px 0;
+    /* Vertical space for shadows */
     margin: 0;
     list-style: none;
-    transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-    /* Gap is logically needed for spacing in the track, even if masked */
-    gap: 100px;
-    /* Large gap ensuring no accidental peek */
+    width: max-content;
+    /* Allow content to flow */
+    transform: none !important;
+    /* Disable JS transforms */
 }
 
-/* Game Cards in Carousel */
+/* Game Cards */
 .game-hub-card {
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
+    /* Force stop at cards */
+    flex-shrink: 0;
+
+    /* Dimensions */
+    width: 280px;
+    min-width: 280px;
+
     background: var(--card-bg);
     border: 1px solid var(--glass-border);
     border-radius: 24px;
     padding: 40px 30px;
-    min-width: 280px;
-    width: 280px;
     text-align: center;
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s, border-color 0.3s;
+
+    /* Transitions */
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+        box-shadow 0.3s,
+        opacity 0.3s;
+
     cursor: pointer;
-    flex-shrink: 0;
     position: relative;
     overflow: hidden;
-    /* Glassmorphism Polish */
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    box-shadow:
-        0 10px 30px -5px rgba(0, 0, 0, 0.5);
+
+    /* Default State (Inactive) */
+    opacity: 0.5;
+    transform: scale(0.9);
+    box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3);
 }
 
 .game-hub-card:hover {
