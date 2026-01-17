@@ -1093,30 +1093,47 @@ const PennyCrush = {
         // We want to fit within e.g. 500px width on desktop, or full width on mobile.
         // And also fit vertically within (Height - Header - Controls - Padding)
 
-        const gridEl = document.getElementById('pc-grid');
+        this.calculateTileSize();
 
-        // Safety margins
-        const maxW = Math.min(window.innerWidth - 40, 600);
-        const maxH = window.innerHeight - 200; // Account for header/controls
+        // Add Resize Listener (Debounced)
+        if (!this.resizeListenerAdded) {
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    if (document.getElementById('pc-game').classList.contains('hidden')) return;
+                    this.calculateTileSize();
+                    this.renderGrid();
+                }, 200);
+            });
+            this.resizeListenerAdded = true;
+        }
 
-        // Ideal square size
-        const bindDim = Math.min(maxW, maxH);
-
-        // Calculate tile size (deduct gap)
-        const gap = 4;
-        let tileSize = Math.floor((bindDim - (gap * (size - 1))) / size);
-
-        // Clamp min/max for sanity
-        tileSize = Math.max(20, Math.min(tileSize, 50));
-
-        // Set CSS Variable
-        gridEl.style.setProperty('--tile-size', `${tileSize}px`);
-        gridEl.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
-
-        this.generateGrid();
         this.renderGrid();
     },
 
+    calculateTileSize: function () {
+        // Dynamic sizing based on viewport
+        // Considerations: Header height (~100px), controls (~100px), padding
+        const availableWidth = window.innerWidth * 0.95; // 95% width
+        const availableHeight = window.innerHeight * 0.7; // 70% height (leave room for header/controls)
+
+        const maxTileWidth = Math.floor(availableWidth / this.gridSize);
+        const maxTileHeight = Math.floor(availableHeight / this.gridSize);
+
+        let size = Math.min(maxTileWidth, maxTileHeight, 55); // Max 55px
+        if (size < 15) size = 15; // Min size
+
+        // Update CSS variable
+        document.documentElement.style.setProperty('--tile-size', `${size}px`);
+        document.documentElement.style.setProperty('--grid-size', this.gridSize);
+
+        // Update grid columns style directly if needed (or rely on CSS var if used in repeat)
+        const gridEl = document.getElementById('pc-grid');
+        if (gridEl) {
+            gridEl.style.gridTemplateColumns = `repeat(${this.gridSize}, 1fr)`;
+        }
+    },
     stop: function () {
         this.isProcessing = false;
     },
