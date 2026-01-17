@@ -2069,3 +2069,162 @@ const PennyCrush = {
  *   - Gomoku and main menu unaffected
  * =========================================================================
  */
+
+/*
+ * =========================================================================
+ * GAME HUB CAROUSEL LOGIC
+ * =========================================================================
+ */
+
+// Games Data Configuration
+const games = [
+    {
+        id: 1,
+        title: 'Gomoku',
+        subtitle: 'Classic strategy game. AI & Online PvP.',
+        icon: '⚫⚪',
+        action: function () { showApp('gomoku'); },
+        playable: true
+    },
+    {
+        id: 2,
+        title: 'Penny Crush',
+        subtitle: 'Match 3 candies! 8x8, 10x10 & 12x12 modes.',
+        icon: '🍬',
+        action: function () { showApp('pennyCrush'); },
+        playable: true
+    },
+    {
+        id: 3,
+        title: 'Coming Soon',
+        subtitle: 'This game is under development.',
+        icon: '🔒',
+        action: null,
+        playable: false
+    },
+    {
+        id: 4,
+        title: 'Coming Soon',
+        subtitle: 'This game is under development.',
+        icon: '🔒',
+        action: null,
+        playable: false
+    },
+    {
+        id: 5,
+        title: 'Coming Soon',
+        subtitle: 'This game is under development.',
+        icon: '🔒',
+        action: null,
+        playable: false
+    }
+];
+
+let currentSlide = 0;
+
+function renderCarousel() {
+    const track = document.getElementById('game-carousel');
+    if (!track) return;
+
+    track.innerHTML = '';
+
+    games.forEach((game) => {
+        const li = document.createElement('li');
+        li.className = `game-hub-card ${game.playable ? '' : 'disabled'}`;
+
+        // Use a data attribute to store ID instead of eval
+        li.dataset.gameId = game.id;
+
+        // Click handler
+        li.onclick = function (e) {
+            // Don't trigger if clicking the button (let button handle it or bubble up?)
+            // Actually button inside card is cleaner to handle clicks
+            if (game.playable && game.action) {
+                game.action();
+            }
+        };
+
+        li.innerHTML = `
+            <div class="card-icon">${game.icon}</div>
+            <h2>${game.title}</h2>
+            <p>${game.subtitle}</p>
+            <button class="pill-btn ${game.playable ? 'primary' : 'disabled'}" ${game.playable ? '' : 'disabled'}>
+                ${game.playable ? 'Play' : 'Locked'}
+            </button>
+        `;
+
+        track.appendChild(li);
+    });
+
+    updateCarousel();
+}
+
+function updateCarousel() {
+    const track = document.getElementById('game-carousel');
+    if (!track) return;
+
+    const cardWidth = 280; // Card width
+    const gap = 30; // Gap between cards
+    const moveAmount = (cardWidth + gap) * currentSlide;
+
+    track.style.transform = `translateX(-${moveAmount}px)`;
+
+    // Manage button states
+    const prevBtn = document.querySelector('.prev-btn');
+    const nextBtn = document.querySelector('.next-btn');
+
+    // Calculate max slide
+    // For 5 items, indices are 0,1,2,3,4
+    // If we show 1 card (mobile), max index is 4
+    // If we show 3 cards (desktop), max index is 2
+
+    const container = document.querySelector('.carousel-track-container');
+    const containerWidth = container ? container.offsetWidth : window.innerWidth;
+
+    // Estimate visible cards
+    const visibleCards = Math.floor((containerWidth + gap) / (cardWidth + gap));
+    const maxSlide = Math.max(0, games.length - Math.max(1, visibleCards));
+
+    if (prevBtn) {
+        prevBtn.style.opacity = currentSlide === 0 ? '0.3' : '1';
+        prevBtn.style.pointerEvents = currentSlide === 0 ? 'none' : 'auto';
+    }
+
+    if (nextBtn) {
+        const atEnd = currentSlide >= maxSlide;
+        nextBtn.style.opacity = atEnd ? '0.3' : '1';
+        nextBtn.style.pointerEvents = atEnd ? 'none' : 'auto';
+    }
+}
+
+function nextGame() {
+    const cardWidth = 280;
+    const gap = 30;
+    const container = document.querySelector('.carousel-track-container');
+    const containerWidth = container ? container.offsetWidth : window.innerWidth;
+    const visibleCards = Math.floor((containerWidth + gap) / (cardWidth + gap));
+    const maxSlide = Math.max(0, games.length - Math.max(1, visibleCards));
+
+    if (currentSlide < maxSlide) {
+        currentSlide++;
+        updateCarousel();
+    }
+}
+
+function prevGame() {
+    if (currentSlide > 0) {
+        currentSlide--;
+        updateCarousel();
+    }
+}
+
+// Initialize Carousel on Load
+window.addEventListener('load', () => {
+    renderCarousel();
+    window.addEventListener('resize', updateCarousel);
+});
+
+// Also try immediately incase load already happened
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    renderCarousel();
+}

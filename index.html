@@ -15,21 +15,14 @@
             <header class="hub-header">
                 <h1>Game Hub</h1>
             </header>
-            <div class="hub-grid">
-                <!-- Gomoku Card -->
-                <div class="game-hub-card" onclick="showApp('gomoku')">
-                    <div class="card-icon">⚫⚪</div>
-                    <h2>Gomoku 五子棋</h2>
-                    <p>Classic strategy game. AI & Online PvP.</p>
-                    <button class="pill-btn primary">Play</button>
+            <div class="carousel-container">
+                <button class="nav-btn prev-btn" onclick="prevGame()">&#10094;</button>
+                <div class="carousel-track-container">
+                    <ul class="carousel-track" id="game-carousel">
+                        <!-- Cards injected via JS -->
+                    </ul>
                 </div>
-                <!-- Penny Crush Card -->
-                <div class="game-hub-card" onclick="showApp('pennyCrush')">
-                    <div class="card-icon">🍬</div>
-                    <h2>Penny Crush</h2>
-                    <p>Match 3 candies! 8x8 & 10x10 & 12x12 modes.</p>
-                    <button class="pill-btn primary">Play</button>
-                </div>
+                <button class="nav-btn next-btn" onclick="nextGame()">&#10095;</button>
             </div>
         </div>
 
