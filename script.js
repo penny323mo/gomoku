@@ -1,18 +1,4 @@
-// Test Firebase function
-async function testFirebase() {
-    try {
-        const docRef = await db.collection("debug").add({
-            message: "Hello Firebase",
-            time: Date.now()
-        });
-        console.log("testFirebase success: Document written with ID: ", docRef.id);
-    } catch (e) {
-        console.error("testFirebase error: ", e);
-    }
-}
-window.testFirebase = testFirebase;
-// Perform test write
-testFirebase();
+import { supabase } from './supabaseClient.js';
 
 const BOARD_SIZE = 15;
 const boardElement = document.getElementById('board');
@@ -20,6 +6,7 @@ const statusElement = document.getElementById('status');
 
 // We need to query this inside updateStatus/resetGame now because it might be overwritten by innerHTML updates
 let playerTurnSpan = document.querySelector('.player-turn');
+
 
 let board = [];
 let currentPlayer = 'black';
@@ -45,20 +32,7 @@ if (!clientId) {
     localStorage.setItem('gomoku_clientId', clientId);
 }
 
-// --- Supabase Helpers ---
-async function safeUpdateRoom(data) {
-    if (!roomRecordId) return;
-    const now = Date.now();
-    if (now - lastWriteTime < MIN_WRITE_INTERVAL) return;
-    lastWriteTime = now;
-
-    const { error } = await supabase
-        .from('rooms')
-        .update({ ...data, last_activity_at: new Date() })
-        .eq('id', roomRecordId);
-
-    if (error) console.error("Update error:", error);
-}
+/* Supabase logic integrated below */
 
 // --- Client ID Logic ---
 // clientId is already defined above, reusing it.
@@ -1617,7 +1591,7 @@ async function joinRoom(code) {
 
     // 1. Fetch Room State
     let { data: room, error } = await supabase
-        .from('rooms')
+        .from("Gomoku's rooms")
         .select('*')
         .eq('room_code', roomId)
         .single();
@@ -1630,9 +1604,8 @@ async function joinRoom(code) {
 
     // 2. Create if not exists
     if (!room) {
-        // Prepare data with global clientId
         const { data: newRoom, error: createError } = await supabase
-            .from('rooms')
+            .from("Gomoku's rooms")
             .insert([{
                 room_code: roomId,
                 black_player_id: clientId, // Creator is Black
@@ -1651,19 +1624,16 @@ async function joinRoom(code) {
         playerRole = 'black';
     } else {
         // 3. Assign Role logic
-        // If I am already a player, keep role. If slot empty, take it.
         if (room.black_player_id === clientId) {
             playerRole = 'black';
         } else if (room.white_player_id === clientId) {
             playerRole = 'white';
         } else if (!room.black_player_id) {
-            await safeUpdateRoomDB(room.id, { black_player_id: clientId });
+            await safeUpdateRoomDB(room.id, { black_player_id: clientId, status: 'playing' });
             playerRole = 'black';
-            room.black_player_id = clientId; // Optimistic update
         } else if (!room.white_player_id) {
-            await safeUpdateRoomDB(room.id, { white_player_id: clientId });
+            await safeUpdateRoomDB(room.id, { white_player_id: clientId, status: 'playing' });
             playerRole = 'white';
-            room.white_player_id = clientId; // Optimistic update
         } else {
             playerRole = 'spectator';
         }
@@ -1687,7 +1657,7 @@ async function joinRoom(code) {
 }
 
 async function safeUpdateRoomDB(id, updates) {
-    const { error } = await supabase.from('rooms').update({
+    const { error } = await supabase.from("Gomoku's rooms").update({
         ...updates,
         last_activity_at: new Date()
     }).eq('id', id);
@@ -1700,142 +1670,165 @@ function getRoleName(role) {
     return '觀戰者';
 }
 
-
 function subscribeToRoom() {
     if (roomChannel) {
         supabase.removeChannel(roomChannel);
     }
 
-    roomChannel = supabase.channel(`game_room_${roomId}`, {
-        config: {
-            presence: { key: clientId },
-        },
-    });
-
-    roomChannel
-        .on('broadcast', { event: 'move' }, ({ payload }) => {
-            console.log('Move received:', payload);
-            handleRemoteMove(payload);
-        })
-        .on('broadcast', { event: 'game_control' }, ({ payload }) => {
-            console.log('Game control:', payload);
-            if (payload.type === 'reset') {
-                resetBoard();
-                updateStatus("房間管理人重置了遊戲");
-                gameOver = false;
-                currentPlayer = 'black';
+    roomChannel = supabase.channel(`room-${roomId}`)
+        .on(
+            "postgres_changes",
+            {
+                event: "*",
+                schema: "public",
+                table: "Gomoku's rooms",
+                filter: `room_code=eq.${roomId}`,
+            },
+            (payload) => {
+                console.log('Room update:', payload);
+                if (payload.new) {
+                    handleRoomUpdate(payload.new);
+                }
             }
-        })
-        .on('postgres_changes', {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'rooms',
-            filter: `id=eq.${roomRecordId}`
-        }, (payload) => {
-            console.log('Room update:', payload.new);
-            handleRoomUpdate(payload.new);
-        })
+        )
         .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                roomChannel.track({ online_at: new Date().toISOString() });
-            }
+            console.log("Subscription status:", status);
         });
 }
 
 function handleRoomUpdate(room) {
-    // Check if I was kicked
-    if (playerRole === 'black' && room.black_player_id !== clientId) {
-        alert("你已被移出黑子位置");
+    // Check if I was kicked or role changed
+    const myId = clientId;
+    if (playerRole === 'black' && room.black_player_id !== myId) {
         playerRole = 'spectator';
-        updateRoleUI();
-    }
-    if (playerRole === 'white' && room.white_player_id !== clientId) {
-        alert("你已被移出白子位置");
+        alert("你已被移除黑子位置");
+    } else if (playerRole === 'white' && room.white_player_id !== myId) {
         playerRole = 'spectator';
-        updateRoleUI();
+        alert("你已被移除白子位置");
     }
 
-    // Sync Status
-    if (room.status === 'finished') {
-        if (room.last_result) {
-            // Just show status, but usually local state handles this
+    updateRoleUI();
+
+    // Sync Board State if it exists
+    if (room.board_state) {
+        try {
+            const remoteBoard = JSON.parse(room.board_state);
+            // Simple diff to see if we need to update
+            if (JSON.stringify(remoteBoard) !== JSON.stringify(board)) {
+                board = remoteBoard;
+                // Re-render stones
+                const stones = document.querySelectorAll('.stone');
+                stones.forEach(s => s.remove());
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (board[r][c]) {
+                            const cell = document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`);
+                            if (cell && !cell.querySelector('.stone')) {
+                                const stone = document.createElement('div');
+                                stone.classList.add('stone', board[r][c]);
+                                cell.appendChild(stone);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Error parsing board state", e);
         }
     }
 
-    updateRoleUI(); // Refresh UI in case opponent joined/left
+    // Sync current player
+    // We can infer current player from board stone count if we want strictly turn based,
+    // or store it. Let's infer to save a column: Black always moves on even number of stones?
+    // Black moves 1 (1 stone), White moves 2 (2 stones).
+    // Count stones:
+    let stonesCount = 0;
+    if (room.board_state) { // only if we have board
+        // ... helper to count ...
+        // Or just read 'last_result'
+    }
+
+    // Check Game Over
+    if (room.last_result) {
+        gameOver = true;
+        if (room.last_result === 'black_win') statusElement.innerHTML = "黑子獲勝！";
+        else if (room.last_result === 'white_win') statusElement.innerHTML = "白子獲勝！";
+        else if (room.last_result === 'draw') statusElement.innerHTML = "和局！";
+    } else {
+        if (room.status === 'playing') {
+            // Verify whose turn it is
+            // This logic depends on board state.
+            // For now, let's just trust local unless we add current_player column.
+            // Using board count:
+            let bCount = 0;
+            let wCount = 0;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === 'black') bCount++;
+                    if (board[r][c] === 'white') wCount++;
+                }
+            }
+            if (bCount === wCount) currentPlayer = 'black';
+            else currentPlayer = 'white';
+
+            updateStatus();
+        }
+    }
 }
 
 function updateRoleUI() {
     const roleSpan = document.getElementById('my-role');
     const startBtn = document.getElementById('online-start-btn');
-    const leaveBtn = document.getElementById('leave-room-btn');
+    // const leaveBtn = document.getElementById('leave-room-btn');
 
     let roleText = '觀眾';
-    if (playerRole === 'black') roleText = '黑子 (房主)';
+    if (playerRole === 'black') roleText = '黑子';
     if (playerRole === 'white') roleText = '白子';
 
     roleSpan.innerText = roleText;
 
-    // Show Start/Reset buttons based on role/state
     const resetBtn = document.getElementById('reset-btn');
-    if (playerRole === 'black') {
+    if (playerRole === 'black' || playerRole === 'white') {
         startBtn.classList.remove('hidden');
         resetBtn.style.display = 'inline-block';
     } else {
         startBtn.classList.add('hidden');
-        resetBtn.style.display = 'none'; // Only host resets? Or both players? usually host.
-    }
-}
-
-// Handling moves
-function handleRemoteMove({ x, y, player }) {
-    if (board[x][y] !== null) return; // Prevent duplicates
-
-    // Update local board Logic (borrow from placeStone)
-    board[x][y] = player;
-
-    // UI Update
-    const cell = document.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
-    if (cell) {
-        cell.classList.add(player);
-        cell.classList.add('new-move');
-
-        // Remove old 'new-move' from others
-        const allHelper = document.querySelectorAll('.new-move');
-        allHelper.forEach(el => {
-            if (el !== cell) el.classList.remove('new-move');
-        });
-    }
-
-    // Check win logic locally
-    if (checkWin(x, y, player)) {
-        gameOver = true;
-        updateStatus(`${player === 'black' ? '黑子' : '白子'} 獲勝！`);
-        // Only host updates DB result to avoid race conditions
-        if (playerRole === 'black') {
-            safeUpdateRoomDB(roomRecordId, { status: 'finished', last_result: player });
-        }
-    } else {
-        currentPlayer = player === 'black' ? 'white' : 'black';
-        updateStatus(`對手已下子，輪到 ${currentPlayer === 'black' ? '黑子' : '白子'}`);
+        resetBtn.style.display = 'none';
     }
 }
 
 async function startOnlineGame() {
-    if (playerRole !== 'black') return;
-    await safeUpdateRoomDB(roomRecordId, { status: 'playing', last_result: null });
+    // Only players can start/restart
+    if (playerRole !== 'black' && playerRole !== 'white') return;
 
-    roomChannel.send({
-        type: 'broadcast',
-        event: 'game_control',
-        payload: { type: 'reset' }
+    // Reset board locally
+    resetGame();
+
+    // Update DB
+    await safeUpdateRoomDB(roomRecordId, {
+        status: 'playing',
+        last_result: null,
+        board_state: JSON.stringify(createEmptyBoard()) // We need to write empty board
     });
+}
 
-    resetBoard();
+function createEmptyBoard() {
+    const b = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        const row = [];
+        for (let c = 0; c < BOARD_SIZE; c++) row.push(null);
+        b.push(row);
+    }
+    return b;
+}
+
+// Reset local board purely (visuals handled in resetGame)
+function resetBoard() {
+    resetGame();
 }
 
 async function leaveRoom() {
-    if (roomRecordId) {
+    if (roomRecordId && playerRole && playerRole !== 'spectator') {
         const updates = {};
         if (playerRole === 'black') updates.black_player_id = null;
         if (playerRole === 'white') updates.white_player_id = null;
@@ -1847,6 +1840,7 @@ async function leaveRoom() {
 
     if (roomChannel) {
         supabase.removeChannel(roomChannel);
+        roomChannel = null;
     }
 
     // Reset state
@@ -1856,14 +1850,75 @@ async function leaveRoom() {
     showView('landing');
 }
 
-// Modify placeStone to broadcast if online
-// Note: You need to manually update placeStone in script.js to call this
-function broadcastMove(x, y, player) {
+// Broadcast Move - Now writes to DB
+async function broadcastMove(row, col, player) {
     if (mode === 'online' && roomChannel) {
-        roomChannel.send({
-            type: 'broadcast',
-            event: 'move',
-            payload: { x, y, player }
+        // Optimistic update already happened in PlaceStone
+
+        // Write to DB
+        // We need to write the FULL board state
+        await safeUpdateRoomDB(roomRecordId, {
+            board_state: JSON.stringify(board),
+            // current_player: ... no column?
         });
     }
 }
+
+async function becomePlayer(role) {
+    if (!roomRecordId) return;
+
+    // Check if taken
+    let { data: room } = await supabase
+        .from("Gomoku's rooms")
+        .select('*')
+        .eq('id', roomRecordId)
+        .single();
+
+    if (role === 'black') {
+        if (room.black_player_id && room.black_player_id !== clientId) {
+            alert("黑子位置已被占用");
+            return;
+        }
+        await safeUpdateRoomDB(roomRecordId, { black_player_id: clientId });
+        playerRole = 'black';
+    } else if (role === 'white') {
+        if (room.white_player_id && room.white_player_id !== clientId) {
+            alert("白子位置已被占用");
+            return;
+        }
+        await safeUpdateRoomDB(roomRecordId, { white_player_id: clientId });
+        playerRole = 'white';
+    }
+    updateRoleUI();
+}
+
+async function becomeSpectator() {
+    if (playerRole === 'spectator') return;
+    if (playerRole === 'black' || playerRole === 'white') {
+        const updates = {};
+        if (playerRole === 'black') updates.black_player_id = null;
+        if (playerRole === 'white') updates.white_player_id = null;
+        await safeUpdateRoomDB(roomRecordId, updates);
+    }
+    playerRole = 'spectator';
+    updateRoleUI();
+}
+
+// Ensure Globals for HTML
+window.showView = showView;
+window.selectMode = selectMode;
+window.joinRoom = joinRoom;
+window.leaveRoom = leaveRoom;
+window.resetGame = resetGame;
+window.handleCellClick = handleCellClick;
+window.PennyCrush = PennyCrush;
+window.showApp = showApp;
+window.nextGame = nextGame;
+window.prevGame = prevGame;
+window.backToLanding = backToLanding;
+window.becomePlayer = becomePlayer;
+window.becomeSpectator = becomeSpectator;
+window.startOnlineGame = startOnlineGame;
+window.toggleModeSelection = toggleModeSelection;
+
+

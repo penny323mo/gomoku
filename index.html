@@ -177,29 +177,7 @@
             </div>
         </div>
     </div>
-    <!-- Supabase SDK -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-    <script>
-        // Initialize Supabase (User must replace these placeholders)
-        // If you have a .env handling system, use that. For static hosting, these are public key safe.
-        const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-        const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
-
-        let supabase;
-        try {
-            if (window.supabase) {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                console.log("Supabase initialized");
-            } else {
-                console.error("Supabase SDK not loaded");
-            }
-        } catch (err) {
-            console.error("Supabase Init Error:", err);
-        }
-    </script>
-
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 
 </html>
