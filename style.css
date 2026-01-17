@@ -237,27 +237,28 @@ h1 {
 .carousel-container {
     position: relative;
     width: 100%;
-    /* Max width for the whole slider area */
-    max-width: 1200px;
+    /* Max width sufficient for card + arrows */
+    max-width: 500px;
     margin: 0 auto;
-    /* Vertically center the carousel content */
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    /* Ensure enough height to balance margins */
     min-height: 60vh;
-    padding: 0 20px;
+    padding: 0 60px;
+    /* Space for arrows */
 }
 
 .carousel-track-container {
     overflow: hidden;
-    width: 100%;
-    /* Limit the track width so arrows don't get too far away on widespread monitors */
-    max-width: 900px;
+    /* Exactly card width to mask neighbors */
+    width: 280px;
+    max-width: 280px;
     position: relative;
     padding: 40px 0;
-    /* Space for shadows/hover lift */
+    /* Vertical space for shadows/lift */
+    /* Center it */
+    margin: 0 auto;
 }
 
 .carousel-track {
@@ -266,7 +267,9 @@ h1 {
     margin: 0;
     list-style: none;
     transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
-    gap: 30px;
+    /* Gap is logically needed for spacing in the track, even if masked */
+    gap: 100px;
+    /* Large gap ensuring no accidental peek */
 }
 
 /* Game Cards in Carousel */
@@ -274,7 +277,6 @@ h1 {
     background: var(--card-bg);
     border: 1px solid var(--glass-border);
     border-radius: 24px;
-    /* Smoother corners */
     padding: 40px 30px;
     min-width: 280px;
     width: 280px;
@@ -288,8 +290,7 @@ h1 {
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     box-shadow:
-        0 10px 30px -5px rgba(0, 0, 0, 0.5),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        0 10px 30px -5px rgba(0, 0, 0, 0.5);
 }
 
 .game-hub-card:hover {
@@ -301,10 +302,12 @@ h1 {
 }
 
 .game-hub-card.active-card {
-    /* Optional: style for the center card if we add JS for it */
-    transform: scale(1.05);
     border-color: var(--neon-cyan);
-    box-shadow: 0 0 30px rgba(14, 165, 233, 0.15);
+    box-shadow:
+        0 20px 40px -5px rgba(0, 0, 0, 0.6),
+        0 0 30px rgba(14, 165, 233, 0.2);
+    /* Subtle scale handled in CSS or JS? CSS is smoother */
+    transform: scale(1.02);
 }
 
 .game-hub-card.disabled {
@@ -335,7 +338,7 @@ h1 {
     margin-bottom: 12px;
     color: var(--text-main);
     font-weight: 700;
-    text-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
 
 .game-hub-card p {
@@ -353,21 +356,21 @@ h1 {
     top: 50%;
     /* Center vertically in container */
     transform: translateY(-50%);
-    width: 48px;
-    height: 48px;
+    width: 54px;
+    height: 54px;
     border-radius: 50%;
-    background: rgba(30, 41, 59, 0.8);
+    background: rgba(30, 41, 59, 0.9);
     border: 1px solid var(--glass-border);
     color: var(--neon-cyan);
-    font-size: 1.5rem;
+    font-size: 1.8rem;
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
     z-index: 20;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.2s;
     backdrop-filter: blur(8px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .nav-btn:hover {
@@ -383,11 +386,26 @@ h1 {
 }
 
 .prev-btn {
-    left: 10px;
+    left: 0;
+    /* Pinned to container edge */
 }
 
 .next-btn {
-    right: 10px;
+    right: 0;
+}
+
+/* Mobile Tweak for Carousel */
+@media (max-width: 480px) {
+    .carousel-container {
+        padding: 0 50px;
+        /* Reduce padding slightly */
+    }
+
+    .nav-btn {
+        width: 44px;
+        height: 44px;
+        font-size: 1.4rem;
+    }
 }
 
 /* Room Header */
@@ -928,6 +946,22 @@ h1 {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
+/* Game Area */
+.pc-grid {
+    display: grid;
+    /* Denser grid per request */
+    gap: 1.5px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 6px;
+    /* Tight padding */
+    border-radius: 12px;
+    margin: 0 auto 20px auto;
+    width: fit-content;
+    height: fit-content;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Menu Label */
 .menu-label {
     color: var(--text-secondary);
     margin-bottom: 10px;
@@ -941,25 +975,14 @@ h1 {
     align-items: center;
 }
 
-.pc-grid {
-    display: grid;
-    gap: 2px;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 6px;
-    border-radius: 10px;
-    margin: 0 auto 15px auto;
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-    /* Columns defined dynamically by JS */
-}
-
+/* Tile Styles */
 .pc-tile {
-    /* Size defined dynamically by --tile-size */
     width: var(--tile-size, 40px);
     height: var(--tile-size, 40px);
     cursor: pointer;
     transition: transform 0.2s, background-color 0.2s;
+    user-select: none;
+    -webkit-user-select: none;
     position: relative;
     /* Default centering for shapes */
     display: flex;

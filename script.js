@@ -1140,56 +1140,52 @@ const PennyCrush = {
     calculateTileSize: function () {
         // Dynamic sizing based on container width
         const container = document.querySelector('.penny-container');
-        const gridEl = document.getElementById('pc-grid');
 
-        if (!container || !gridEl) return;
-
-        // Get computed style to ensure we handle padding correctly
-        const computedStyle = window.getComputedStyle(container);
-        const paddingLeft = parseFloat(computedStyle.paddingLeft);
-        const paddingRight = parseFloat(computedStyle.paddingRight);
-        const containerInnerWidth = container.clientWidth - paddingLeft - paddingRight;
-
+        // Get available width from container or fallback
+        // Reduce padding to absolute minimum for "full" look
+        const containerWidth = container ? container.clientWidth : window.innerWidth;
         const screenHeight = window.innerHeight;
         const isMobile = window.innerWidth <= 480;
 
-        // Gap setup
-        const gapSize = isMobile ? 2 : 3;
+        // Minimal gap and padding for dense look
+        const gapSize = isMobile ? 1 : 1.5;
+        const gridPadding = isMobile ? 8 : 12; // Tighter padding
+
+        // Calculate tile size
         const totalGaps = (this.gridSize - 1) * gapSize;
+        const availableWidth = containerWidth - gridPadding - totalGaps;
 
-        // Grid internal padding (optional visual padding inside the black box)
-        const gridPadding = isMobile ? 4 : 8;
-
-        // Available width for ACTUAL TILES
-        const availableWidth = containerInnerWidth - totalGaps - (gridPadding * 2);
-
-        // Calculate max possible tile width
+        // Floor to prevent subpixel issues causing wrap
         const tileFromWidth = Math.floor(availableWidth / this.gridSize);
 
-        // Height constraint logic
-        const maxGridHeight = screenHeight * (isMobile ? 0.55 : 0.60);
-        const availableHeight = maxGridHeight - totalGaps - (gridPadding * 2);
+        // Height constraint
+        const maxGridHeight = screenHeight * (isMobile ? 0.6 : 0.65);
+        const availableHeight = maxGridHeight - gridPadding - totalGaps;
         const tileFromHeight = Math.floor(availableHeight / this.gridSize);
 
-        // Set max tile size limits
-        const maxTileSize = isMobile ? 60 : 65; // Upper bound to prevent massive tiles on large screens
-        const minTileSize = 15;
+        // Choose smaller dimension
+        let tileSize = Math.min(tileFromWidth, tileFromHeight);
 
-        // Final size selection: fit width, but don't exceed height constraint or max limit
-        let size = Math.min(tileFromWidth, tileFromHeight, maxTileSize);
-        if (size < minTileSize) size = minTileSize;
+        // Cap max size
+        const MAX_TILE = isMobile ? 55 : 70;
+        tileSize = Math.min(tileSize, MAX_TILE);
+
+        const finalTileSize = Math.max(tileSize, 20); // Min 20px
 
         // Apply
-        document.documentElement.style.setProperty('--tile-size', `${size}px`);
+        document.documentElement.style.setProperty('--tile-size', `${finalTileSize}px`);
         document.documentElement.style.setProperty('--grid-size', this.gridSize);
 
-        gridEl.style.gridTemplateColumns = `repeat(${this.gridSize}, ${size}px)`;
-        gridEl.style.gap = `${gapSize}px`;
-        gridEl.style.padding = `${gridPadding}px`;
+        const gridEl = document.getElementById('pc-grid');
+        if (gridEl) {
+            gridEl.style.gridTemplateColumns = `repeat(${this.gridSize}, ${finalTileSize}px)`;
+            gridEl.style.gap = `${gapSize}px`;
+            gridEl.style.padding = `${gridPadding}px`;
 
-        // Ensure grid itself stays centered if tile calculation leaves a pixel remainder
-        gridEl.style.width = 'fit-content';
-        gridEl.style.margin = '0 auto';
+            // Ensure grid itself stays centered if tile calculation leaves a pixel remainder
+            gridEl.style.width = 'fit-content';
+            gridEl.style.margin = '0 auto';
+        }
     },
     stop: function () {
         this.isProcessing = false;
@@ -1280,7 +1276,7 @@ const PennyCrush = {
                     this.grid[r + emptyCount][c] = this.grid[r][c];
                     this.grid[r][c] = null;
 
-                    // Simple logic: we just moved one stone. 
+                    // Simple logic: we just moved one stone.
                     // To support full cascade correctly in one pass is tricky.
                     // Actually, simpler approach: collect column, filter nulls, prepend new.
                 }
@@ -1293,7 +1289,7 @@ const PennyCrush = {
         }
 
         this.renderGrid();
-        // Allow a small delay for "falling" viz if we animation later, 
+        // Allow a small delay for "falling" viz if we animation later,
         // for now instantaneous logic update.
         await new Promise(r => setTimeout(r, 200));
     },
@@ -2047,22 +2043,22 @@ const PennyCrush = {
  * =========================================================================
  * PENNY CRUSH GRID BUG FIX (January 2026)
  * =========================================================================
- * 
+ *
  * PROBLEM: The Penny Crush game grid was not rendering. Users would see
  *          the title, score, and buttons, but the game board was completely
  *          missing on both desktop and mobile.
- * 
+ *
  * ROOT CAUSE: JavaScript logic error in PennyCrush.init()
  *   - The init() function was calling renderGrid() directly without first
  *     calling generateGrid() to populate the this.grid data array.
  *   - Since this.grid was initialized as an empty array [], the renderGrid()
  *     function's loops (for r < gridSize, for c < gridSize) would iterate
  *     over undefined rows, creating zero tile elements.
- * 
- * FIX: Added the missing this.generateGrid() call in init() before 
- *      renderGrid() on line 1112. This ensures the 2D grid array is 
+ *
+ * FIX: Added the missing this.generateGrid() call in init() before
+ *      renderGrid() on line 1112. This ensures the 2D grid array is
  *      populated with random candy colors before the DOM tiles are created.
- * 
+ *
  * Existing functionality preserved:
  *   - Shuffle (3 uses) works correctly
  *   - Matching/cascading logic unchanged
@@ -2166,21 +2162,18 @@ function updateCarousel() {
     const track = document.getElementById('game-carousel');
     if (!track) return;
 
-    // Get fresh dimensions
-    const container = document.querySelector('.carousel-container');
-    const containerWidth = container ? container.offsetWidth : window.innerWidth;
-
-    // Matched with CSS
+    // Matched with CSS masking width and large gap
     const cardWidth = 280;
-    const gap = 30;
+    const gap = 100; // CSS gap
 
-    // Calculate position to center the current slide
-    // position = centerOffset - (slideOffset)
-    const centerOffset = (containerWidth / 2) - (cardWidth / 2);
-    const slideOffset = currentSlide * (cardWidth + gap);
-    const moveAmount = centerOffset - slideOffset;
+    // Position logic for masked single-view:
+    // We want the Nth card centered in the mask.
+    // Since mask width = card width, we just shift by (width + gap) * index.
+    // 0 -> 0
+    // 1 -> -(280+100) = -380
+    const moveAmount = currentSlide * (cardWidth + gap);
 
-    track.style.transform = `translateX(${moveAmount}px)`;
+    track.style.transform = `translateX(-${moveAmount}px)`;
 
     // Update Active Card Style
     const cards = document.querySelectorAll('.game-hub-card');
@@ -2188,10 +2181,10 @@ function updateCarousel() {
         if (index === currentSlide) {
             card.classList.add('active-card');
             card.style.opacity = '1';
-            card.style.transform = 'scale(1.05)';
+            card.style.transform = 'scale(1.02)';
         } else {
             card.classList.remove('active-card');
-            card.style.opacity = '0.5'; // Dim others
+            card.style.opacity = '0'; // Hide masked neighbors
             card.style.transform = 'scale(0.9)';
         }
     });
@@ -2199,8 +2192,6 @@ function updateCarousel() {
     // Manage button states
     const prevBtn = document.querySelector('.prev-btn');
     const nextBtn = document.querySelector('.next-btn');
-
-    // Simple 0 to length-1 bounds for centered view
     const maxSlide = games.length - 1;
 
     if (prevBtn) {
