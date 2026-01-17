@@ -1109,6 +1109,7 @@ const PennyCrush = {
             this.resizeListenerAdded = true;
         }
 
+        this.generateGrid();
         this.renderGrid();
     },
 
@@ -1644,3 +1645,31 @@ const PennyCrush = {
         return matches;
     }
 };
+
+/*
+ * =========================================================================
+ * PENNY CRUSH GRID BUG FIX (January 2026)
+ * =========================================================================
+ * 
+ * PROBLEM: The Penny Crush game grid was not rendering. Users would see
+ *          the title, score, and buttons, but the game board was completely
+ *          missing on both desktop and mobile.
+ * 
+ * ROOT CAUSE: JavaScript logic error in PennyCrush.init()
+ *   - The init() function was calling renderGrid() directly without first
+ *     calling generateGrid() to populate the this.grid data array.
+ *   - Since this.grid was initialized as an empty array [], the renderGrid()
+ *     function's loops (for r < gridSize, for c < gridSize) would iterate
+ *     over undefined rows, creating zero tile elements.
+ * 
+ * FIX: Added the missing this.generateGrid() call in init() before 
+ *      renderGrid() on line 1112. This ensures the 2D grid array is 
+ *      populated with random candy colors before the DOM tiles are created.
+ * 
+ * Existing functionality preserved:
+ *   - Shuffle (3 uses) works correctly
+ *   - Matching/cascading logic unchanged
+ *   - Bomb power-up mechanics intact
+ *   - Gomoku and main menu unaffected
+ * =========================================================================
+ */
