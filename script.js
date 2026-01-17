@@ -1727,6 +1727,8 @@ const PennyCrush = {
         // Spawn special tile if applicable
         if (spawnPos && specialType) {
             this.grid[spawnPos.r][spawnPos.c] = specialType;
+            // Force immediate render to show the new special tile before potential gravity
+            this.renderGrid();
         }
 
         // Gravity
@@ -2162,16 +2164,23 @@ function updateCarousel() {
     const track = document.getElementById('game-carousel');
     if (!track) return;
 
+    // Get fresh dimensions
+    const container = document.querySelector('.carousel-container');
+    const containerWidth = container ? container.offsetWidth : window.innerWidth;
+
     // Matched with CSS masking width and large gap
     const cardWidth = 280;
     const gap = 100; // CSS gap
 
-    // Position logic for masked single-view:
-    // We want the Nth card centered in the mask.
-    // Since mask width = card width, we just shift by (width + gap) * index.
-    // 0 -> 0
-    // 1 -> -(280+100) = -380
-    const moveAmount = currentSlide * (cardWidth + gap);
+    // Proper centering math:
+    // We want the active card's Center to be at containerWidth / 2.
+    // Active card's left position in flow = index * (cardWidth + gap).
+    // Active card's center = (index * (cardWidth + gap)) + (cardWidth / 2).
+    // Desired translation = (containerWidth / 2) - ActiveCardCenter.
+
+    const activeCardCenter = (currentSlide * (cardWidth + gap)) + (cardWidth / 2);
+    const desiredCenter = containerWidth / 2;
+    const moveAmount = activeCardCenter - desiredCenter;
 
     track.style.transform = `translateX(-${moveAmount}px)`;
 

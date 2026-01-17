@@ -946,7 +946,26 @@ h1 {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-/* Game Area */
+/* Penny Crush Wrapper Fixes */
+.penny-container {
+    width: 100%;
+    max-width: 500px;
+    /* Constraint */
+    margin: 0 auto;
+    box-sizing: border-box;
+    /* Ensure no overflow */
+}
+
+/* Tool Buttons Layout */
+.pc-tools {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    /* Allow wrapping on very small screens */
+    width: 100%;
+}
+
 .pc-grid {
     display: grid;
     /* Denser grid per request */
