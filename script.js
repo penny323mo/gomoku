@@ -1425,43 +1425,50 @@ function renderCarousel() {
     const track = document.getElementById('game-carousel');
     if (!track) return;
 
-    // Safety check BEFORE clearing
+    // Safety check: ensure games exist
     if (!games || games.length === 0) {
-        console.error("Games list is empty or undefined!");
+        console.error("Games list is empty!");
         return;
     }
 
-    track.innerHTML = '';
+    // SAFE RENDER: Build in memory first, then swap.
+    // This prevents wiping the static fallback if an error occurs during generation.
+    try {
+        const fragment = document.createDocumentFragment();
 
-    games.forEach((game) => {
-        const li = document.createElement('li');
-        li.className = `game-hub-card ${game.playable ? '' : 'disabled'}`;
+        games.forEach((game) => {
+            const li = document.createElement('li');
+            li.className = `game-hub-card ${game.playable ? '' : 'disabled'}`;
+            li.dataset.gameId = game.id;
 
-        // Use a data attribute to store ID instead of eval
-        li.dataset.gameId = game.id;
+            // Click handler (using global function for robustness)
+            li.onclick = function () {
+                if (game.playable) {
+                    window.showApp(game.id === 'gomoku' ? 'gomoku' :
+                        game.id === 'pennycrush' ? 'pennyCrush' : null);
+                }
+            };
 
-        // Click handler
-        li.onclick = function (e) {
-            // Don't trigger if clicking the button (let button handle it or bubble up?)
-            // Actually button inside card is cleaner to handle clicks
-            if (game.playable && game.action) {
-                game.action();
-            }
-        };
+            li.innerHTML = `
+                <div class="card-icon">${game.icon}</div>
+                <h2>${game.title}</h2>
+                <p>${game.subtitle}</p>
+                <button class="pill-btn ${game.playable ? 'primary' : 'disabled'}" ${game.playable ? '' : 'disabled'}>
+                    ${game.playable ? 'Play' : 'Locked'}
+                </button>
+            `;
+            fragment.appendChild(li);
+        });
 
-        li.innerHTML = `
-            <div class="card-icon">${game.icon}</div>
-            <h2>${game.title}</h2>
-            <p>${game.subtitle}</p>
-            <button class="pill-btn ${game.playable ? 'primary' : 'disabled'}" ${game.playable ? '' : 'disabled'}>
-                ${game.playable ? 'Play' : 'Locked'}
-            </button>
-        `;
+        // Only clear and append if we successfully built the fragment
+        track.innerHTML = '';
+        track.appendChild(fragment);
 
-        track.appendChild(li);
-    });
-
-    updateCarousel();
+        updateCarousel();
+    } catch (e) {
+        console.error("Error rendering carousel:", e);
+        // Do NOT clear track, leave static fallback
+    }
 }
 
 
