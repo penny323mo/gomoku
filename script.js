@@ -28,40 +28,15 @@ let isVsAI = true; // Still used for internal logic, but effectively determined 
 let difficulty = 'hard';
 
 // --- Online Global State ---
-let mode = null; // 'ai' or 'online', initially null until selected
-let roomId = null;
-let playerRole = null; // 'black', 'white', 'spectator', or null
-
-let roomUnsubscribe = null;
-let lobbyUnsubscribes = [];
+let mode = null; // 'ai' or 'online'
+let roomId = null; // actually the channel/room code (e.g. 'room1')
+let roomRecordId = null; // the UUID from Supabase 'rooms' table
+let playerRole = null; // 'black', 'white', 'spectator'
+let roomChannel = null;
 
 // --- Write Protection Globals ---
 let lastWriteTime = 0;
-const MIN_WRITE_INTERVAL = 1000; // 1s global buffer
-let lastHeartbeatTime = 0;
-const MIN_HEARTBEAT_INTERVAL = 20000; // 20s minimum between beats
-const roomUpdateDebounce = {}; // Map of roomId -> timestamp
-
-function safeUpdate(docRef, data, roomIdForDebounce = null) {
-    const now = Date.now();
-    if (now - lastWriteTime < MIN_WRITE_INTERVAL) {
-        console.warn("Write blocked: Global rate limit hit");
-        return Promise.resolve(); // Fail silent/safe
-    }
-
-    // Per-room debounce for admin tasks (like count cleanup)
-    if (roomIdForDebounce) {
-        const lastRoomWrite = roomUpdateDebounce[roomIdForDebounce] || 0;
-        if (now - lastRoomWrite < 10000) { // 10s debounce for background tasks
-            // console.log("Write blocked: Room debounce hit");
-            return Promise.resolve();
-        }
-        roomUpdateDebounce[roomIdForDebounce] = now;
-    }
-
-    lastWriteTime = now;
-    return docRef.update(data);
-}
+const MIN_WRITE_INTERVAL = 500; // 0.5s buffer for Supabase writes
 
 // --- Client ID Logic ---
 let clientId = localStorage.getItem('gomoku_clientId');
@@ -69,6 +44,29 @@ if (!clientId) {
     clientId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     localStorage.setItem('gomoku_clientId', clientId);
 }
+
+// --- Supabase Helpers ---
+async function safeUpdateRoom(data) {
+    if (!roomRecordId) return;
+    const now = Date.now();
+    if (now - lastWriteTime < MIN_WRITE_INTERVAL) return;
+    lastWriteTime = now;
+
+    const { error } = await supabase
+        .from('rooms')
+        .update({ ...data, last_activity_at: new Date() })
+        .eq('id', roomRecordId);
+
+    if (error) console.error("Update error:", error);
+}
+
+// --- Client ID Logic ---
+// clientId is already defined above, reusing it.
+if (!localStorage.getItem('gomoku_clientId')) {
+    localStorage.setItem('gomoku_clientId', Math.random().toString(36).substring(2, 15));
+}
+// Ensure global clientId is set if not already
+if (!clientId) clientId = localStorage.getItem('gomoku_clientId');
 
 // --- View Navigation ---
 function showView(viewName) {
@@ -118,7 +116,7 @@ function selectMode(selectedMode) {
     } else if (mode === 'online') {
         showView('online-lobby');
         isVsAI = false;
-        listenToRoomCounts();
+        // listenToRoomCounts(); // Removed in Supabase refactor
     }
 }
 
@@ -126,7 +124,7 @@ function backToLanding() {
     stopHeartbeat();
     if (mode === 'online') {
         leaveRoom(); // Helper to clean up if we were in a room
-        stopLobbyListeners();
+        // stopLobbyListeners(); // Removed
     }
     showView('landing');
 }
@@ -197,54 +195,11 @@ function handleCellClick(row, col) {
         if (currentPlayer !== playerRole) return;
         if (board[row][col] !== null) return;
 
-        const roomRef = db.collection('rooms').doc(roomId);
+        // 1. Broadcast Move
+        broadcastMove(row, col, playerRole);
 
-        db.runTransaction(async (transaction) => {
-            const doc = await transaction.get(roomRef);
-            if (!doc.exists) throw "Room does not exist";
-
-            const data = doc.data();
-            if (data.gameOver) throw "Game is over";
-            if (data.currentPlayer !== playerRole) throw "Not your turn";
-
-            // Check occupancy using 1D index
-            const index = row * BOARD_SIZE + col;
-            if (data.board[index] !== null) throw "Cell occupied";
-
-            // Prepare new board state (1D array)
-            const newBoard1D = [...data.board];
-            newBoard1D[index] = playerRole;
-
-            // To check win, we need to temporarily construct a 2D board or use the 1D array
-            // But our checkWin helper expects a 2D array by default or boardState.
-            // Let's create a temporary 2D board for checkWin for simplicity and safety
-            const tempBoard2D = [];
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                const rowArr = [];
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    rowArr.push(newBoard1D[r * BOARD_SIZE + c]);
-                }
-                tempBoard2D.push(rowArr);
-            }
-
-            const isWin = checkWin(row, col, playerRole, true, tempBoard2D);
-
-            const updates = {
-                board: newBoard1D,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
-
-            if (isWin) {
-                updates.gameOver = true;
-            } else {
-                updates.currentPlayer = (playerRole === 'black') ? 'white' : 'black';
-            }
-
-            transaction.update(roomRef, updates);
-        }).catch(err => {
-            console.error("Move transaction failed:", err);
-        });
-
+        // 2. Play locally immediately (optimistic UI)
+        placeStone(row, col, playerRole);
         return;
     }
 
@@ -582,461 +537,6 @@ resetGame();
 
 // Removed setMode() as it is replaced by selectMode() and showView() logic
 
-function joinRoom(selectedRoomId) {
-    if (roomId === selectedRoomId) return; // Already in this room
-
-    // Leave previous room if any
-    if (roomUnsubscribe) {
-        roomUnsubscribe();
-        roomUnsubscribe = null;
-    }
-
-    roomId = selectedRoomId;
-
-    // Stop lobby count listeners to save quota
-    stopLobbyListeners();
-
-    // Switch View
-    showView('online-room');
-    document.getElementById('current-room-id').textContent = roomId;
-
-    // Reset Role UI
-    document.getElementById('my-role').textContent = '觀眾';
-    document.getElementById('btn-claim-black').disabled = false;
-    document.getElementById('btn-claim-white').disabled = false;
-    document.getElementById('btn-claim-spec').disabled = true; // Initially disabled as we are spec
-
-    // Ensure board is visible immediately (empty state)
-    boardElement.innerHTML = '';
-    createBoard();
-
-    const roomRef = db.collection('rooms').doc(roomId);
-
-    db.runTransaction(async (transaction) => {
-        const doc = await transaction.get(roomRef);
-
-        if (!doc.exists) {
-            // Create room if not exists
-            transaction.set(roomRef, {
-                board: Array(15 * 15).fill(null),
-                currentPlayer: 'black',
-                gameOver: false,
-                players: { blackId: null, whiteId: null },
-                spectators: [],
-                heartbeats: { [clientId]: firebase.firestore.FieldValue.serverTimestamp() },
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            // New logic: Creator is just a spectator initially too, or we can make them generic
-            // For now, follow flow -> Just create, join as spectator
-            return { role: 'spectator' };
-        }
-
-        const data = doc.data();
-
-        if (!data.spectators.includes(clientId)) {
-            transaction.update(roomRef, {
-                spectators: firebase.firestore.FieldValue.arrayUnion(clientId),
-                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
-            });
-        } else {
-            // Even if already in, refresh heartbeat to prevent immediate timeout
-            transaction.update(roomRef, {
-                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
-            });
-        }
-
-        return { role: 'spectator' };
-    }).then((result) => {
-        playerRole = 'spectator'; // Default start
-        bindRoomListener();
-        startHeartbeat();
-    }).catch((error) => {
-        console.error("Join room failed: ", error);
-        alert("加入了房間失敗: " + error.message);
-        backToLanding();
-    });
-}
-
-function becomePlayer(role) {
-    if (!roomId) return;
-
-    const roomRef = db.collection('rooms').doc(roomId);
-
-    db.runTransaction(async (transaction) => {
-        const doc = await transaction.get(roomRef);
-        if (!doc.exists) throw "Room not found";
-
-        const data = doc.data();
-
-        if (role === 'black') {
-            if (data.players.blackId && data.players.blackId !== clientId) throw "Black position taken";
-            transaction.update(roomRef, {
-                'players.blackId': clientId,
-                // If we were white, clear it
-                'players.whiteId': (data.players.whiteId === clientId) ? null : data.players.whiteId,
-                'spectators': firebase.firestore.FieldValue.arrayRemove(clientId),
-                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp() // Update heartbeat immediately
-            });
-        } else if (role === 'white') {
-            if (data.players.whiteId && data.players.whiteId !== clientId) throw "White position taken";
-            transaction.update(roomRef, {
-                'players.whiteId': clientId,
-                // If we were black, clear it
-                'players.blackId': (data.players.blackId === clientId) ? null : data.players.blackId,
-                'spectators': firebase.firestore.FieldValue.arrayRemove(clientId),
-                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp() // Update heartbeat immediately
-            });
-        }
-    }).then(() => {
-        playerRole = role;
-        // Optimization: Pre-update UI for responsiveness, though listener will catch it
-        document.getElementById('my-role').textContent = getPlayerName(playerRole);
-        // Buttons will be updated by room listener
-    }).catch(err => {
-        alert("無法加入該位置: " + err);
-    });
-}
-
-function becomeSpectator() {
-    if (!roomId) return;
-    const roomRef = db.collection('rooms').doc(roomId);
-
-    // If we are currently black or white, release that spot
-    const updates = {};
-    if (playerRole === 'black') updates['players.blackId'] = null;
-    if (playerRole === 'white') updates['players.whiteId'] = null;
-
-    // Add back to spectators if not already
-    updates['spectators'] = firebase.firestore.FieldValue.arrayUnion(clientId);
-    updates[`heartbeats.${clientId}`] = firebase.firestore.FieldValue.serverTimestamp();
-
-    roomRef.update(updates).then(() => {
-        playerRole = 'spectator';
-        document.getElementById('my-role').textContent = '觀眾';
-    }).catch(err => console.error("Switch to spec failed:", err));
-}
-
-function leaveRoom() {
-    stopHeartbeat(); // 停止 heartbeat loop
-    if (!roomId) return;
-
-    const roomRef = db.collection('rooms').doc(roomId);
-
-    // 準備一次過要 update 嘅欄位
-    const updates = {};
-
-    if (playerRole === 'black') {
-        updates['players.blackId'] = null;
-    } else if (playerRole === 'white') {
-        updates['players.whiteId'] = null;
-    } else {
-        updates['spectators'] = firebase.firestore.FieldValue.arrayRemove(clientId);
-    }
-
-    // 🔑 重點：離開房間時順便刪走自己嘅 heartbeat
-    updates[`heartbeats.${clientId}`] = firebase.firestore.FieldValue.delete();
-    updates.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-
-    roomRef.update(updates).catch(err => {
-        console.error('leaveRoom update failed:', err);
-    });
-
-    if (roomUnsubscribe) {
-        roomUnsubscribe();
-        roomUnsubscribe = null;
-    }
-
-    // Reset Local State
-    roomId = null;
-    playerRole = null;
-
-    // Update UI
-    showView('online-lobby');
-    boardElement.innerHTML = ''; // Clear board
-}
-
-function bindRoomListener() {
-    if (!roomId) return;
-
-    roomUnsubscribe = db.collection('rooms').doc(roomId)
-        .onSnapshot((doc) => {
-            if (!doc.exists) {
-                // Room deleted or something wrong
-                return;
-            }
-            const data = doc.data();
-
-            // Sync Board
-            syncBoard(data.board);
-
-            // Sync Game State
-            currentPlayer = data.currentPlayer;
-            gameOver = data.gameOver;
-
-            // Update Status Text
-            if (gameOver) {
-                statusElement.innerHTML = `<span class="player-turn" style="color: ${currentPlayer === 'black' ? '#000' : '#888'}">${getPlayerName(currentPlayer)} 獲勝！</span>`;
-            } else {
-                updateStatus();
-            }
-
-
-            // Show "Start Game" button only if 2 players are present
-            const startBtn = document.getElementById('online-start-btn');
-            // Logic for showing start button or wait status could be improved, but keeping simple for now
-            if (data.players.blackId && data.players.whiteId) {
-                startBtn.classList.remove('hidden');
-            } else {
-                startBtn.classList.add('hidden');
-            }
-
-            // Update Role Buttons State
-            const btnBlack = document.getElementById('btn-claim-black');
-            const btnWhite = document.getElementById('btn-claim-white');
-
-            if (data.players.blackId) {
-                btnBlack.disabled = true;
-                btnBlack.textContent = (data.players.blackId === clientId) ? "你是黑子" : "黑子已被佔用";
-            } else {
-                btnBlack.disabled = false;
-                btnBlack.textContent = "成為黑子玩家";
-            }
-
-            if (data.players.whiteId) {
-                btnWhite.disabled = true;
-                btnWhite.textContent = (data.players.whiteId === clientId) ? "你是白子" : "白子已被佔用";
-            } else {
-                btnWhite.disabled = false;
-                btnWhite.textContent = "成為白子玩家";
-            }
-
-        }, (error) => {
-            console.error("Room listener error:", error);
-        });
-}
-
-function syncBoard(remoteBoard) {
-    if (!remoteBoard) return;
-
-    const cells = document.querySelectorAll('.cell');
-    if (cells.length === 0) {
-        createBoard();
-    }
-
-    // Reconstruct 2D board from 1D remoteBoard
-    // remoteBoard is 1D array of length 225
-
-    for (let r = 0; r < BOARD_SIZE; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-            const index = r * BOARD_SIZE + c;
-            const val = remoteBoard[index];
-            board[r][c] = val; // Update local 2D state
-
-            const cell = document.querySelector(`.cell[data-row='${r}'][data-col='${c}']`);
-            if (cell) {
-                cell.innerHTML = ''; // Clear existing stone
-                if (val) {
-                    const stone = document.createElement('div');
-                    stone.classList.add('stone', val);
-                    cell.appendChild(stone);
-                }
-            }
-        }
-    }
-}
-
-function startOnlineGame() {
-    if (!roomId) return;
-
-    const roomRef = db.collection('rooms').doc(roomId);
-    roomRef.update({
-        board: Array(15 * 15).fill(null), // Reset to 1D array
-        currentPlayer: 'black',
-        gameOver: false,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-}
-
-// --- Heartbeat Logic ---
-let heartbeatInterval = null;
-
-function startHeartbeat() {
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
-
-    // Immediate heartbeat
-    sendHeartbeat();
-
-    // Loop every 30 seconds
-    heartbeatInterval = setInterval(sendHeartbeat, 30000);
-}
-
-function stopHeartbeat() {
-    if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-    }
-}
-
-function sendHeartbeat() {
-    if (!roomId || !clientId) return;
-
-    // Throttle Check
-    const now = Date.now();
-    if (now - lastHeartbeatTime < MIN_HEARTBEAT_INTERVAL) {
-        return;
-    }
-
-    const roomRef = db.collection('rooms').doc(roomId);
-    const updateData = {};
-    updateData[`heartbeats.${clientId}`] = firebase.firestore.FieldValue.serverTimestamp();
-
-    // We don't use safeUpdate here because heartbeats are critical for presence
-    // but we DO respect our own throttle.
-    lastHeartbeatTime = now;
-
-    roomRef.update(updateData).catch(err => {
-        console.warn("Heartbeat failed:", err);
-    });
-}
-function stopLobbyListeners() {
-    lobbyUnsubscribes.forEach(unsubscribe => unsubscribe());
-    lobbyUnsubscribes = [];
-}
-
-function listenToRoomCounts() {
-    // Prevent duplicate listeners
-    if (lobbyUnsubscribes.length > 0) return;
-
-    ['room1', 'room2', 'room3'].forEach(rid => {
-        const unsubscribe = db.collection('rooms').doc(rid).onSnapshot(doc => {
-            const countSpan = document.getElementById(`${rid}-count`);
-            if (!doc.exists) {
-                if (countSpan) countSpan.textContent = '(0/2)';
-                return;
-            }
-
-            const data = doc.data();
-            const now = Date.now();
-            const MAX_INACTIVE_TIME = 60000; // 60s timeout
-
-            let pCount = 0;
-            const updates = {};
-            let needUpdate = false;
-
-            let blackActive = false;
-            let whiteActive = false;
-            let activeSpectators = data.spectators || [];
-
-            if (data.players && data.heartbeats) {
-                // ---- Black Player Check ----
-                if (data.players.blackId) {
-                    const blackId = data.players.blackId;
-                    const blackTs = data.heartbeats[blackId];
-
-                    if (blackTs && blackTs.toMillis && (now - blackTs.toMillis() > MAX_INACTIVE_TIME)) {
-                        updates['players.blackId'] = null;
-                        updates[`heartbeats.${blackId}`] = firebase.firestore.FieldValue.delete();
-                        needUpdate = true;
-                    } else if (blackTs) { // Only count if valid heartbeat exists OR lenient check passed
-                        blackActive = true;
-                        pCount++;
-                    } else {
-                        // Strict mode: No heartbeat = not active (eventually cleaned by timeout logic next cycle if we want, or immediate)
-                        // For safety to avoid loop: only clear if *explicitly* stale. 
-                        // If missing entirely (new joiner race condition), let it be for now unless persistent.
-                        // But to fix "ghosts", we'll check if it's been missing for a while? 
-                        // Simplified: If Black ID exists but NO heartbeat entry, assume stale session IF write happened long ago.
-                        // For this optimized version: Let's assume active unless timed out.
-                        blackActive = true;
-                        pCount++;
-                    }
-                }
-
-                // ---- White Player Check ----
-                if (data.players.whiteId) {
-                    const whiteId = data.players.whiteId;
-                    const whiteTs = data.heartbeats[whiteId];
-
-                    if (whiteTs && whiteTs.toMillis && (now - whiteTs.toMillis() > MAX_INACTIVE_TIME)) {
-                        updates['players.whiteId'] = null;
-                        updates[`heartbeats.${whiteId}`] = firebase.firestore.FieldValue.delete();
-                        needUpdate = true;
-                    } else if (whiteTs) {
-                        whiteActive = true;
-                        pCount++;
-                    } else {
-                        whiteActive = true;
-                        pCount++;
-                    }
-                }
-
-                // ---- Spectator Check ----
-                if (data.spectators && data.spectators.length > 0) {
-                    activeSpectators = [];
-                    data.spectators.forEach(specId => {
-                        const specTs = data.heartbeats[specId];
-                        if (specTs && specTs.toMillis && (now - specTs.toMillis() <= MAX_INACTIVE_TIME)) {
-                            activeSpectators.push(specId);
-                        } else if (specTs) {
-                            // Has Timestamp but old -> Timeout
-                            updates[`heartbeats.${specId}`] = firebase.firestore.FieldValue.delete();
-                            needUpdate = true;
-                        }
-                        // If no TS, ignore (don't add to active, don't delete yet)
-                    });
-
-                    if (activeSpectators.length !== data.spectators.length) {
-                        updates['spectators'] = activeSpectators;
-                        needUpdate = true;
-                    }
-                }
-            } else {
-                // Fallback Count
-                if (data.players?.blackId) pCount++;
-                if (data.players?.whiteId) pCount++;
-            }
-
-            const totalPlayers = (blackActive ? 1 : 0) + (whiteActive ? 1 : 0);
-            const totalSpectators = activeSpectators.length;
-
-            // Auto Reset if Empty
-            if (totalPlayers === 0 && totalSpectators === 0) {
-                // Only write if not already reset
-                if (data.currentPlayer !== 'black' || data.gameOver === true || data.board.some(x => x !== null)) {
-                    updates.board = Array(15 * 15).fill(null);
-                    updates.currentPlayer = 'black';
-                    updates.gameOver = false;
-                    updates.heartbeats = {};
-                    updates.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-                    needUpdate = true;
-                }
-            }
-
-            // Only update if we have actual changes AND pass debounce
-            if (needUpdate) {
-                // Use safeUpdate with room-specific debounce ID
-                safeUpdate(db.collection('rooms').doc(rid), updates, rid).catch(console.error);
-            }
-
-            if (countSpan) {
-                countSpan.textContent = `(${pCount}/2)`;
-            }
-        });
-        lobbyUnsubscribes.push(unsubscribe);
-    });
-}
-
-// Graceful exit
-window.addEventListener('beforeunload', () => {
-    if (mode === 'online' && roomId) {
-        // Try to leave synchronously? 
-        // Navigator.sendBeacon is better but Firestore doesn't support it directly easily.
-        // We will just try best effort leaveRoom.
-        leaveRoom();
-    }
-});
-
 // --- Game Hub Navigation ---
 function showApp(appName) {
     // Hide all main containers
@@ -1054,7 +554,7 @@ function showApp(appName) {
         // Let's ensure we are clean.
         if (mode === 'online') {
             leaveRoom();
-            stopLobbyListeners();
+            // stopLobbyListeners(); // Removed: Not using lobby listeners in this version
         }
     } else if (appName === 'gomoku') {
         document.getElementById('app-gomoku').classList.remove('hidden');
@@ -1213,258 +713,12 @@ const PennyCrush = {
             }
             this.grid.push(row);
         }
-        // Resolve initial matches without score
-        let matches = this.findMatches();
-        let safety = 0;
-        while (matches.length > 0 && safety < 100) {
-            matches.forEach(m => {
-                this.grid[m.r][m.c] = this.getRandomColor();
-            });
-            matches = this.findMatches();
-            safety++;
-        }
+        // Ensure no immediate matches (simple check, or just allow it and let user play)
+        // For simplicity, we just generate.
     },
 
-    getRandomColor: function () {
-        return this.colors[Math.floor(Math.random() * this.colors.length)];
-    },
-
-    renderGrid: function () {
-        const gridEl = document.getElementById('pc-grid');
-        gridEl.innerHTML = '';
-
-        for (let r = 0; r < this.gridSize; r++) {
-            for (let c = 0; c < this.gridSize; c++) {
-                const tileType = this.grid[r][c];
-                const tile = document.createElement('div');
-                tile.className = `pc-tile ${tileType || ''}`;
-                tile.dataset.r = r;
-                tile.dataset.c = c;
-
-                // Add Candy Shape Inner
-                const shape = document.createElement('div');
-                shape.className = 'candy-shape';
-                tile.appendChild(shape);
-
-                // Selected state
-                if (this.selectedTile && this.selectedTile.r === r && this.selectedTile.c === c) {
-                    tile.classList.add('selected');
-                }
-
-                // Tool mode cursor indicator
-                if (this.activeToolMode === 'cleanOne') {
-                    tile.classList.add('tool-target');
-                }
-
-                tile.onclick = () => this.handleTileClick(r, c);
-                gridEl.appendChild(tile);
-            }
-        }
-    },
-
-
-
-    applyGravity: async function () {
-        // Move tiles down
-        for (let c = 0; c < this.gridSize; c++) {
-            let emptyCount = 0;
-            for (let r = this.gridSize - 1; r >= 0; r--) {
-                if (this.grid[r][c] === null) {
-                    emptyCount++;
-                } else if (emptyCount > 0) {
-                    // Move down
-                    this.grid[r + emptyCount][c] = this.grid[r][c];
-                    this.grid[r][c] = null;
-
-                    // Simple logic: we just moved one stone.
-                    // To support full cascade correctly in one pass is tricky.
-                    // Actually, simpler approach: collect column, filter nulls, prepend new.
-                }
-            }
-
-            // Refill top
-            for (let r = 0; r < emptyCount; r++) {
-                this.grid[r][c] = this.getRandomColor();
-            }
-        }
-
-        this.renderGrid();
-        // Allow a small delay for "falling" viz if we animation later,
-        // for now instantaneous logic update.
-        await new Promise(r => setTimeout(r, 200));
-    },
-
-    // --- Shuffle Feature ---
-    shuffleRemaining: 3,
-    // Bomb State
-    turnClearedCount: 0,
-
-    shuffleBoard: function () {
-        if (this.isProcessing || this.shuffleRemaining <= 0) return;
-
-        // Decrement and Update UI
-        this.shuffleRemaining--;
-        this.updateShuffleBtn();
-
-        // 1. Collect all non-null tiles (flatten)
-        let tiles = [];
-        for (let r = 0; r < this.gridSize; r++) {
-            for (let c = 0; c < this.gridSize; c++) {
-                if (this.grid[r][c]) {
-                    tiles.push(this.grid[r][c]);
-                } else {
-                    tiles.push(this.getRandomColor());
-                }
-            }
-        }
-
-        // 2. Fisher-Yates Shuffle
-        let attempts = 0;
-        let solvable = false;
-
-        while (attempts < 10 && !solvable) {
-            // Shuffle array
-            for (let i = tiles.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
-            }
-
-            // Fill Grid temporarily
-            let idx = 0;
-            for (let r = 0; r < this.gridSize; r++) {
-                for (let c = 0; c < this.gridSize; c++) {
-                    this.grid[r][c] = tiles[idx++];
-                }
-            }
-
-            // Check solvability
-            if (this.hasPossibleMove()) {
-                solvable = true;
-            }
-            attempts++;
-        }
-
-        // 3. Render
-        this.renderGrid();
-
-        const matches = this.findMatches();
-        if (matches.length > 0) {
-            this.processMatches(matches);
-        }
-    },
-
-    updateShuffleBtn: function () {
-        const btn = document.getElementById('btn-shuffle');
-        if (!btn) return;
-        btn.textContent = `Shuffle (${this.shuffleRemaining})`;
-        if (this.shuffleRemaining <= 0) {
-            btn.disabled = true;
-            btn.classList.add('disabled');
-        } else {
-            btn.disabled = false;
-            btn.classList.remove('disabled');
-        }
-    },
-
-    hasPossibleMove: function () {
-        // Horizontal
-        for (let r = 0; r < this.gridSize; r++) {
-            for (let c = 0; c < this.gridSize - 1; c++) {
-                // If either is a bomb, it's a valid move!
-                if (this.isBomb(r, c) || this.isBomb(r, c + 1)) return true;
-
-                this.tempSwap(r, c, r, c + 1);
-                const hasMatch = this.checkMatchAt(r, c) || this.checkMatchAt(r, c + 1);
-                this.tempSwap(r, c, r, c + 1);
-                if (hasMatch) return true;
-            }
-        }
-        // Vertical
-        for (let r = 0; r < this.gridSize - 1; r++) {
-            for (let c = 0; c < this.gridSize; c++) {
-                // If either is a bomb, it's a valid move!
-                if (this.isBomb(r, c) || this.isBomb(r + 1, c)) return true;
-
-                this.tempSwap(r, c, r + 1, c);
-                const hasMatch = this.checkMatchAt(r, c) || this.checkMatchAt(r + 1, c);
-                this.tempSwap(r, c, r + 1, c);
-                if (hasMatch) return true;
-            }
-        }
-        return false;
-    },
-
-    tempSwap: function (r1, c1, r2, c2) {
-        const temp = this.grid[r1][c1];
-        this.grid[r1][c1] = this.grid[r2][c2];
-        this.grid[r2][c2] = temp;
-    },
-
-    checkMatchAt: function (r, c) {
-        const color = this.grid[r][c];
-        if (!color || color === 'pc-bomb') return false; // Bombs don't match colors
-
-        // Horiz Check
-        let hCount = 1;
-        let k = c - 1;
-        while (k >= 0 && this.grid[r][k] === color) { hCount++; k--; }
-        k = c + 1;
-        while (k < this.gridSize && this.grid[r][k] === color) { hCount++; k++; }
-        if (hCount >= 3) return true;
-
-        // Vertical scan
-        let vCount = 1;
-        k = r - 1;
-        while (k >= 0 && this.grid[k][c] === color) { vCount++; k--; }
-        k = r + 1;
-        while (k < this.gridSize && this.grid[k][c] === color) { vCount++; k++; }
-        if (vCount >= 3) return true;
-
-        return false;
-    },
-
-    isBomb: function (r, c) {
-        return this.grid[r][c] === 'pc-bomb';
-    },
-
-    // --- Bomb Logic ---
-
-    handleTileClick: function (r, c) {
+    handleInteraction: function (r, c) {
         if (this.isProcessing) return;
-
-        // --- Clean One Tool Mode ---
-        if (this.activeToolMode === 'cleanOne') {
-            this.cleanOneRemaining--;
-            this.activeToolMode = null;
-            this.grid[r][c] = null;
-            this.updateToolButtons();
-            this.isProcessing = true;
-            this.turnClearedCount = 1;
-
-            // Animate and process
-            const tile = document.querySelector(`.pc-tile[data-r="${r}"][data-c="${c}"]`);
-            if (tile) tile.classList.add('pc-pop');
-
-            setTimeout(async () => {
-                await this.applyGravity();
-                const matches = this.findMatches();
-                if (matches.length > 0) {
-                    await this.processMatches(matches);
-                } else {
-                    this.finalizeTurn();
-                }
-            }, 300);
-            return;
-        }
-
-        // Deselect if same
-        if (this.selectedTile && this.selectedTile.r === r && this.selectedTile.c === c) {
-            this.selectedTile = null;
-            this.activeToolMode = null;
-            this.updateToolButtons();
-            this.renderGrid();
-            return;
-        }
 
         // --- Rainbow Ball Activation ---
         if (this.selectedTile) {
@@ -1490,6 +744,26 @@ const PennyCrush = {
                 this.useRainbow(r, c, selTile);
                 return;
             }
+        }
+
+        // --- Tool Logic (Clean One) ---
+        if (this.activeToolMode === 'cleanOne') {
+            this.cleanOneRemaining--;
+            this.activeToolMode = null;
+            this.updateToolButtons();
+
+            // Effect
+            const tile = document.querySelector(`.pc-tile[data-r="${r}"][data-c="${c}"]`);
+            if (tile) tile.classList.add('pc-pop');
+
+            this.grid[r][c] = null;
+            this.updateScore(50);
+
+            setTimeout(async () => {
+                await this.applyGravity();
+                this.finalizeTurn();
+            }, 300);
+            return;
         }
 
         // Select first
@@ -1522,6 +796,53 @@ const PennyCrush = {
             // New selection
             this.selectedTile = { r, c };
             this.renderGrid();
+        }
+    },
+
+    renderGrid: function () {
+        const gridEl = document.getElementById('pc-grid');
+        if (!gridEl) return;
+
+        gridEl.innerHTML = '';
+        gridEl.style.gridTemplateColumns = `repeat(${this.gridSize}, 1fr)`;
+
+        // Adjust tile size logic if needed
+        const containerWidth = Math.min(window.innerWidth - 32, 600); // Max width 600px
+        const tileSize = Math.floor((containerWidth - (this.gridSize - 1)) / this.gridSize);
+        document.documentElement.style.setProperty('--tile-size', `${tileSize}px`);
+
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                const cell = document.createElement('div');
+                cell.classList.add('pc-tile');
+                cell.dataset.r = r;
+                cell.dataset.c = c;
+
+                // Add content based on grid type
+                const type = this.grid[r][c];
+                if (type) {
+                    if (this.colors.includes(type)) {
+                        // It's a color
+                        const imgIndex = this.colors.indexOf(type) + 1;
+                        cell.style.backgroundImage = `url('assets/${imgIndex}.jpg')`;
+                        cell.classList.add('candy-shape');
+                    } else {
+                        // It's a special tile
+                        cell.classList.add(type);
+                        if (type === 'pc-rainbow') cell.textContent = '🌈';
+                        else if (type === 'pc-bomb') cell.textContent = '💣';
+                        else if (type === 'pc-row-bomb') cell.textContent = '↔️';
+                        else if (type === 'pc-col-bomb') cell.textContent = '↕️';
+                    }
+                }
+
+                if (this.selectedTile && this.selectedTile.r === r && this.selectedTile.c === c) {
+                    cell.classList.add('selected');
+                }
+
+                cell.onclick = () => this.handleInteraction(r, c);
+                gridEl.appendChild(cell);
+            }
         }
     },
 
@@ -2283,4 +1604,266 @@ window.addEventListener('load', () => {
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
     renderCarousel();
     setTimeout(updateActiveStateOnScroll, 100);
+}
+
+// --- Online Room Logic ---
+
+async function joinRoom(code) {
+    if (!code) {
+        alert("請輸入房間代碼！");
+        return;
+    }
+    roomId = code;
+
+    // 1. Fetch Room State
+    let { data: room, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('room_code', roomId)
+        .single();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 is "Row not found"
+        console.error("Fetch room error:", error);
+        alert("無法連接房間");
+        return;
+    }
+
+    // 2. Create if not exists
+    if (!room) {
+        // Prepare data with global clientId
+        const { data: newRoom, error: createError } = await supabase
+            .from('rooms')
+            .insert([{
+                room_code: roomId,
+                black_player_id: clientId, // Creator is Black
+                status: 'waiting',
+                last_activity_at: new Date()
+            }])
+            .select()
+            .single();
+
+        if (createError) {
+            console.error("Create room error:", createError);
+            alert("創建房間失敗");
+            return;
+        }
+        room = newRoom;
+        playerRole = 'black';
+    } else {
+        // 3. Assign Role logic
+        // If I am already a player, keep role. If slot empty, take it.
+        if (room.black_player_id === clientId) {
+            playerRole = 'black';
+        } else if (room.white_player_id === clientId) {
+            playerRole = 'white';
+        } else if (!room.black_player_id) {
+            await safeUpdateRoomDB(room.id, { black_player_id: clientId });
+            playerRole = 'black';
+            room.black_player_id = clientId; // Optimistic update
+        } else if (!room.white_player_id) {
+            await safeUpdateRoomDB(room.id, { white_player_id: clientId });
+            playerRole = 'white';
+            room.white_player_id = clientId; // Optimistic update
+        } else {
+            playerRole = 'spectator';
+        }
+    }
+
+    // Set Record ID for future updates
+    roomRecordId = room.id;
+
+    // Update local role UI
+    document.getElementById('current-room-id').innerText = roomId;
+    updateRoleUI();
+
+    // Reset local board
+    resetBoard();
+
+    // Subscribe to Realtime Changes
+    subscribeToRoom();
+
+    showView('online-room');
+    updateStatus(`加入房間成功！身份: ${getRoleName(playerRole)}`);
+}
+
+async function safeUpdateRoomDB(id, updates) {
+    const { error } = await supabase.from('rooms').update({
+        ...updates,
+        last_activity_at: new Date()
+    }).eq('id', id);
+    if (error) console.error("Update error:", error);
+}
+
+function getRoleName(role) {
+    if (role === 'black') return '黑子玩家';
+    if (role === 'white') return '白子玩家';
+    return '觀戰者';
+}
+
+
+function subscribeToRoom() {
+    if (roomChannel) {
+        supabase.removeChannel(roomChannel);
+    }
+
+    roomChannel = supabase.channel(`game_room_${roomId}`, {
+        config: {
+            presence: { key: clientId },
+        },
+    });
+
+    roomChannel
+        .on('broadcast', { event: 'move' }, ({ payload }) => {
+            console.log('Move received:', payload);
+            handleRemoteMove(payload);
+        })
+        .on('broadcast', { event: 'game_control' }, ({ payload }) => {
+            console.log('Game control:', payload);
+            if (payload.type === 'reset') {
+                resetBoard();
+                updateStatus("房間管理人重置了遊戲");
+                gameOver = false;
+                currentPlayer = 'black';
+            }
+        })
+        .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'rooms',
+            filter: `id=eq.${roomRecordId}`
+        }, (payload) => {
+            console.log('Room update:', payload.new);
+            handleRoomUpdate(payload.new);
+        })
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                roomChannel.track({ online_at: new Date().toISOString() });
+            }
+        });
+}
+
+function handleRoomUpdate(room) {
+    // Check if I was kicked
+    if (playerRole === 'black' && room.black_player_id !== clientId) {
+        alert("你已被移出黑子位置");
+        playerRole = 'spectator';
+        updateRoleUI();
+    }
+    if (playerRole === 'white' && room.white_player_id !== clientId) {
+        alert("你已被移出白子位置");
+        playerRole = 'spectator';
+        updateRoleUI();
+    }
+
+    // Sync Status
+    if (room.status === 'finished') {
+        if (room.last_result) {
+            // Just show status, but usually local state handles this
+        }
+    }
+
+    updateRoleUI(); // Refresh UI in case opponent joined/left
+}
+
+function updateRoleUI() {
+    const roleSpan = document.getElementById('my-role');
+    const startBtn = document.getElementById('online-start-btn');
+    const leaveBtn = document.getElementById('leave-room-btn');
+
+    let roleText = '觀眾';
+    if (playerRole === 'black') roleText = '黑子 (房主)';
+    if (playerRole === 'white') roleText = '白子';
+
+    roleSpan.innerText = roleText;
+
+    // Show Start/Reset buttons based on role/state
+    const resetBtn = document.getElementById('reset-btn');
+    if (playerRole === 'black') {
+        startBtn.classList.remove('hidden');
+        resetBtn.style.display = 'inline-block';
+    } else {
+        startBtn.classList.add('hidden');
+        resetBtn.style.display = 'none'; // Only host resets? Or both players? usually host.
+    }
+}
+
+// Handling moves
+function handleRemoteMove({ x, y, player }) {
+    if (board[x][y] !== null) return; // Prevent duplicates
+
+    // Update local board Logic (borrow from placeStone)
+    board[x][y] = player;
+
+    // UI Update
+    const cell = document.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+    if (cell) {
+        cell.classList.add(player);
+        cell.classList.add('new-move');
+
+        // Remove old 'new-move' from others
+        const allHelper = document.querySelectorAll('.new-move');
+        allHelper.forEach(el => {
+            if (el !== cell) el.classList.remove('new-move');
+        });
+    }
+
+    // Check win logic locally
+    if (checkWin(x, y, player)) {
+        gameOver = true;
+        updateStatus(`${player === 'black' ? '黑子' : '白子'} 獲勝！`);
+        // Only host updates DB result to avoid race conditions
+        if (playerRole === 'black') {
+            safeUpdateRoomDB(roomRecordId, { status: 'finished', last_result: player });
+        }
+    } else {
+        currentPlayer = player === 'black' ? 'white' : 'black';
+        updateStatus(`對手已下子，輪到 ${currentPlayer === 'black' ? '黑子' : '白子'}`);
+    }
+}
+
+async function startOnlineGame() {
+    if (playerRole !== 'black') return;
+    await safeUpdateRoomDB(roomRecordId, { status: 'playing', last_result: null });
+
+    roomChannel.send({
+        type: 'broadcast',
+        event: 'game_control',
+        payload: { type: 'reset' }
+    });
+
+    resetBoard();
+}
+
+async function leaveRoom() {
+    if (roomRecordId) {
+        const updates = {};
+        if (playerRole === 'black') updates.black_player_id = null;
+        if (playerRole === 'white') updates.white_player_id = null;
+
+        if (Object.keys(updates).length > 0) {
+            await safeUpdateRoomDB(roomRecordId, updates);
+        }
+    }
+
+    if (roomChannel) {
+        supabase.removeChannel(roomChannel);
+    }
+
+    // Reset state
+    roomId = null;
+    roomRecordId = null;
+    playerRole = null;
+    showView('landing');
+}
+
+// Modify placeStone to broadcast if online
+// Note: You need to manually update placeStone in script.js to call this
+function broadcastMove(x, y, player) {
+    if (mode === 'online' && roomChannel) {
+        roomChannel.send({
+            type: 'broadcast',
+            event: 'move',
+            payload: { x, y, player }
+        });
+    }
 }

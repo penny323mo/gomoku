@@ -177,27 +177,26 @@
             </div>
         </div>
     </div>
-    <!-- Firebase App (the core Firebase SDK) is always required and must be listed first -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <!-- Add Firebase products that you want to use -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyDIX2SINucrLofi5ceF3qI8wHMH6xyY6GQ",
-            authDomain: "gomoku-85a0b.firebaseapp.com",
-            projectId: "gomoku-85a0b",
-            storageBucket: "gomoku-85a0b.firebasestorage.app",
-            messagingSenderId: "1022980266439",
-            appId: "1:1022980266439:web:978440b8b67eb30d1ae1e2",
-            measurementId: "G-64785RPL06"
-        };
+        // Initialize Supabase (User must replace these placeholders)
+        // If you have a .env handling system, use that. For static hosting, these are public key safe.
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+        const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
 
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-
-        // Initialize Cloud Firestore and expose global db
-        const db = firebase.firestore();
+        let supabase;
+        try {
+            if (window.supabase) {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                console.log("Supabase initialized");
+            } else {
+                console.error("Supabase SDK not loaded");
+            }
+        } catch (err) {
+            console.error("Supabase Init Error:", err);
+        }
     </script>
 
     <script src="script.js"></script>
