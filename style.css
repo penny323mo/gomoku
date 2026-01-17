@@ -239,14 +239,18 @@ h1 {
 }
 
 /* Board Styling */
+/* Board Styling */
 .board-frame {
     background: #5d4037;
     /* Dark wood border */
     padding: 15px;
     border-radius: 10px;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
-    display: inline-block;
-    margin-bottom: 20px;
+    display: block;
+    /* Changed from inline-block to prevent collapse */
+    width: fit-content;
+    margin: 0 auto 20px auto;
+    /* Center it */
 }
 
 #board {
@@ -254,6 +258,8 @@ h1 {
     grid-template-columns: repeat(15, 1fr);
     grid-template-rows: repeat(15, 1fr);
     width: 100%;
+    min-width: 300px;
+    /* Ensure strictly non-zero size */
     max-width: 500px;
     /* Constrain max size */
     aspect-ratio: 1 / 1;
