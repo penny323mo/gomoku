@@ -28,7 +28,7 @@ let isVsAI = true; // Still used for internal logic, but effectively determined 
 let difficulty = 'hard';
 
 // --- Online Global State ---
-let mode = 'ai'; // 'ai' or 'online'
+let mode = null; // 'ai' or 'online', initially null until selected
 let roomId = null;
 let playerRole = null; // 'black', 'white', 'spectator', or null
 let roomUnsubscribe = null;
@@ -38,6 +38,62 @@ let clientId = localStorage.getItem('gomoku_clientId');
 if (!clientId) {
     clientId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     localStorage.setItem('gomoku_clientId', clientId);
+}
+
+// --- View Navigation ---
+function showView(viewName) {
+    // Hide all main containers
+    document.getElementById('landing-page').classList.add('hidden');
+    document.getElementById('game-container').classList.add('hidden');
+
+    // Hide all sub-sections in game container
+    document.getElementById('ai-controls').classList.add('hidden');
+    document.getElementById('online-lobby').classList.add('hidden');
+    document.getElementById('online-room').classList.add('hidden');
+    document.getElementById('game-board-area').classList.add('hidden');
+
+    switch (viewName) {
+        case 'landing':
+            document.getElementById('landing-page').classList.remove('hidden');
+            document.getElementById('mode-selection').classList.add('hidden'); // Reset selection
+            break;
+        case 'ai-game':
+            document.getElementById('game-container').classList.remove('hidden');
+            document.getElementById('ai-controls').classList.remove('hidden');
+            document.getElementById('game-board-area').classList.remove('hidden');
+            break;
+        case 'online-lobby':
+            document.getElementById('game-container').classList.remove('hidden');
+            document.getElementById('online-lobby').classList.remove('hidden');
+            break;
+        case 'online-room':
+            document.getElementById('game-container').classList.remove('hidden');
+            document.getElementById('online-room').classList.remove('hidden');
+            document.getElementById('game-board-area').classList.remove('hidden');
+            break;
+    }
+}
+
+function toggleModeSelection() {
+    const selectionDiv = document.getElementById('mode-selection');
+    selectionDiv.classList.remove('hidden');
+}
+
+function selectMode(selectedMode) {
+    mode = selectedMode;
+    if (mode === 'ai') {
+        showView('ai-game');
+        isVsAI = true;
+        resetGame();
+    } else if (mode === 'online') {
+        showView('online-lobby');
+        isVsAI = false;
+        listenToRoomCounts();
+    }
+}
+
+function backToLanding() {
+    showView('landing');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -489,34 +545,7 @@ resetGame();
 
 // --- Online Mode Functions ---
 
-function setMode(newMode) {
-    mode = newMode;
-    isVsAI = (mode === 'ai');
-
-    // Update Mode Buttons
-    document.getElementById('mode-ai').classList.toggle('active', mode === 'ai');
-    document.getElementById('mode-online').classList.toggle('active', mode === 'online');
-
-    // Toggle Sections
-    const aiControls = document.getElementById('ai-controls');
-    const onlineControls = document.getElementById('online-global-controls');
-    const resetBtn = document.getElementById('reset-btn');
-
-    if (mode === 'ai') {
-        aiControls.classList.remove('hidden');
-        onlineControls.classList.add('hidden');
-        resetBtn.style.display = 'inline-block';
-        if (roomUnsubscribe) leaveRoom(); // Auto leave if switching back to AI
-        resetGame(); // Reset local AI game
-    } else {
-        aiControls.classList.add('hidden');
-        onlineControls.classList.remove('hidden');
-        resetBtn.style.display = 'none'; // Hide local reset button in online mode lobby
-        // Reset board for clean state
-        boardElement.innerHTML = '';
-        statusElement.innerHTML = '請選擇房間加入';
-    }
-}
+// Removed setMode() as it is replaced by selectMode() and showView() logic
 
 function joinRoom(selectedRoomId) {
     if (roomId === selectedRoomId) return; // Already in this room
@@ -529,10 +558,15 @@ function joinRoom(selectedRoomId) {
 
     roomId = selectedRoomId;
 
-    // Show room info
-    document.getElementById('room-list').classList.add('hidden');
-    document.getElementById('room-info').classList.remove('hidden');
+    // Switch View
+    showView('online-room');
     document.getElementById('current-room-id').textContent = roomId;
+
+    // Reset Role UI
+    document.getElementById('my-role').textContent = '觀眾';
+    document.getElementById('btn-claim-black').disabled = false;
+    document.getElementById('btn-claim-white').disabled = false;
+    document.getElementById('btn-claim-spec').disabled = true; // Initially disabled as we are spec
 
     // Ensure board is visible immediately (empty state)
     boardElement.innerHTML = '';
@@ -545,62 +579,104 @@ function joinRoom(selectedRoomId) {
 
         if (!doc.exists) {
             // Create room if not exists
-            // Fix: Use 1D array for board to avoid Firestore "Nested arrays not supported" error
             transaction.set(roomRef, {
-                board: Array(15 * 15).fill(null), // 1D array 225 items
+                board: Array(15 * 15).fill(null),
                 currentPlayer: 'black',
                 gameOver: false,
                 players: { blackId: null, whiteId: null },
                 spectators: [],
-                heartbeats: { [clientId]: firebase.firestore.FieldValue.serverTimestamp() }, // Init heartbeat
+                heartbeats: { [clientId]: firebase.firestore.FieldValue.serverTimestamp() },
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
-            return { role: 'black' }; // First joiner becomes black
+            // New logic: Creator is just a spectator initially too, or we can make them generic
+            // For now, follow flow -> Just create, join as spectator
+            return { role: 'spectator' };
         }
 
         const data = doc.data();
-        let assignedRole = 'spectator';
 
-        if (data.players.blackId === clientId || data.players.blackId === null) {
-            assignedRole = 'black';
+        // Add to spectators by default
+        if (!data.spectators.includes(clientId)) {
             transaction.update(roomRef, {
-                'players.blackId': clientId,
-                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
-            });
-        } else if (data.players.whiteId === clientId || data.players.whiteId === null) {
-            assignedRole = 'white';
-            transaction.update(roomRef, {
-                'players.whiteId': clientId,
+                spectators: firebase.firestore.FieldValue.arrayUnion(clientId),
                 [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
             });
         } else {
-            // Add to spectators if not already there
-            if (!data.spectators.includes(clientId)) {
-                transaction.update(roomRef, {
-                    spectators: firebase.firestore.FieldValue.arrayUnion(clientId),
-                    [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
-                });
-            } else {
-                // Just update heartbeat if already there
-                transaction.update(roomRef, {
-                    [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
-                });
-            }
+            transaction.update(roomRef, {
+                [`heartbeats.${clientId}`]: firebase.firestore.FieldValue.serverTimestamp()
+            });
         }
 
-        return { role: assignedRole };
+        return { role: 'spectator' };
     }).then((result) => {
-        playerRole = result.role;
-        document.getElementById('my-role').textContent = getPlayerName(playerRole) || '觀眾';
+        playerRole = 'spectator'; // Default start
         bindRoomListener();
-        startHeartbeat(); // Start heartbeat loop
+        startHeartbeat();
     }).catch((error) => {
         console.error("Join room failed: ", error);
         alert("加入了房間失敗: " + error.message);
-        setMode('online'); // Reset UI
+        backToLanding();
     });
 }
+
+function becomePlayer(role) {
+    if (!roomId) return;
+
+    const roomRef = db.collection('rooms').doc(roomId);
+
+    db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(roomRef);
+        if (!doc.exists) throw "Room not found";
+
+        const data = doc.data();
+
+        if (role === 'black') {
+            if (data.players.blackId && data.players.blackId !== clientId) throw "Black position taken";
+            transaction.update(roomRef, {
+                'players.blackId': clientId,
+                // If we were white previously, free it? usually we just switch. 
+                // But simplified: assuming we were spec or coming from other role.
+                'players.whiteId': (data.players.whiteId === clientId) ? null : data.players.whiteId,
+                'spectators': firebase.firestore.FieldValue.arrayRemove(clientId)
+            });
+        } else if (role === 'white') {
+            if (data.players.whiteId && data.players.whiteId !== clientId) throw "White position taken";
+            transaction.update(roomRef, {
+                'players.whiteId': clientId,
+                'players.blackId': (data.players.blackId === clientId) ? null : data.players.blackId,
+                'spectators': firebase.firestore.FieldValue.arrayRemove(clientId)
+            });
+        }
+    }).then(() => {
+        playerRole = role;
+        // Optimization: Pre-update UI for responsiveness, though listener will catch it
+        document.getElementById('my-role').textContent = getPlayerName(playerRole);
+        // Buttons will be updated by room listener
+    }).catch(err => {
+        alert("無法加入該位置: " + err);
+    });
+}
+
+function becomeSpectator() {
+    if (!roomId) return;
+    const roomRef = db.collection('rooms').doc(roomId);
+
+    // If we are currently black or white, release that spot
+    const updates = {};
+    if (playerRole === 'black') updates['players.blackId'] = null;
+    if (playerRole === 'white') updates['players.whiteId'] = null;
+
+    // Add back to spectators if not already
+    updates['spectators'] = firebase.firestore.FieldValue.arrayUnion(clientId);
+    updates[`heartbeats.${clientId}`] = firebase.firestore.FieldValue.serverTimestamp();
+
+    roomRef.update(updates).then(() => {
+        playerRole = 'spectator';
+        document.getElementById('my-role').textContent = '觀眾';
+    }).catch(err => console.error("Switch to spec failed:", err));
+}
+
 function leaveRoom() {
     stopHeartbeat(); // 停止 heartbeat loop
     if (!roomId) return;
@@ -636,9 +712,7 @@ function leaveRoom() {
     playerRole = null;
 
     // Update UI
-    document.getElementById('room-info').classList.add('hidden');
-    document.getElementById('room-list').classList.remove('hidden');
-    statusElement.innerHTML = '請選擇房間加入';
+    showView('online-lobby');
     boardElement.innerHTML = ''; // Clear board
 }
 
@@ -667,12 +741,34 @@ function bindRoomListener() {
                 updateStatus();
             }
 
+
             // Show "Start Game" button only if 2 players are present
             const startBtn = document.getElementById('online-start-btn');
+            // Logic for showing start button or wait status could be improved, but keeping simple for now
             if (data.players.blackId && data.players.whiteId) {
                 startBtn.classList.remove('hidden');
             } else {
                 startBtn.classList.add('hidden');
+            }
+
+            // Update Role Buttons State
+            const btnBlack = document.getElementById('btn-claim-black');
+            const btnWhite = document.getElementById('btn-claim-white');
+
+            if (data.players.blackId) {
+                btnBlack.disabled = true;
+                btnBlack.textContent = (data.players.blackId === clientId) ? "你是黑子" : "黑子已被佔用";
+            } else {
+                btnBlack.disabled = false;
+                btnBlack.textContent = "成為黑子玩家";
+            }
+
+            if (data.players.whiteId) {
+                btnWhite.disabled = true;
+                btnWhite.textContent = (data.players.whiteId === clientId) ? "你是白子" : "白子已被佔用";
+            } else {
+                btnWhite.disabled = false;
+                btnWhite.textContent = "成為白子玩家";
             }
 
         }, (error) => {
