@@ -10,97 +10,149 @@
 
 <body>
     <div class="switch-container">
-        <main class="switch-card">
-            <h1>五子棋</h1>
-
-            <!-- Landing Page / Game Selection -->
-            <div id="landing-page">
-                <div class="game-tile" onclick="toggleModeSelection()">
-                    <div class="game-icon">⚫⚪</div>
+        <!-- Main Game Hub -->
+        <div id="app-hub">
+            <header class="hub-header">
+                <h1>Game Hub</h1>
+            </header>
+            <div class="hub-grid">
+                <!-- Gomoku Card -->
+                <div class="game-hub-card" onclick="showApp('gomoku')">
+                    <div class="card-icon">⚫⚪</div>
                     <h2>Gomoku 五子棋</h2>
+                    <p>Classic strategy game. AI & Online PvP.</p>
+                    <button class="pill-btn primary">Play</button>
                 </div>
-
-                <div id="mode-selection" class="hidden">
-                    <button class="pill-btn mode-btn" onclick="selectMode('ai')">對 AI 對戰</button>
-                    <button class="pill-btn mode-btn" onclick="selectMode('online')">Online 對戰</button>
+                <!-- Penny Crush Card -->
+                <div class="game-hub-card" onclick="showApp('pennyCrush')">
+                    <div class="card-icon">🍬</div>
+                    <h2>Penny Crush</h2>
+                    <p>Match 3 candies! 4x4 & 6x6 modes.</p>
+                    <button class="pill-btn primary">Play</button>
                 </div>
             </div>
+        </div>
 
-            <!-- Game Container (Hidden on Landing) -->
-            <div id="game-container" class="hidden">
+        <!-- Gomoku (Existing App Wrapped) -->
+        <div id="app-gomoku" class="hidden">
+            <main class="switch-card">
+                <h1>五子棋</h1>
 
-                <!-- VS AI Specific Controls -->
-                <div id="ai-controls" class="hidden">
-                    <div class="controls-card">
-                        <label for="difficulty">難度：</label>
-                        <select id="difficulty" class="pill-select">
-                            <option value="easy">Easy</option>
-                            <option value="medium">Medium</option>
-                            <option value="hard" selected>Hard</option>
-                        </select>
-                        <button class="pill-btn secondary" onclick="backToLanding()">返回主選單</button>
+                <!-- Landing Page / Game Selection -->
+                <div id="landing-page">
+                    <div class="landing-actions">
+                        <button class="pill-btn mode-btn" onclick="selectMode('ai')">對 AI 對戰</button>
+                        <button class="pill-btn mode-btn" onclick="selectMode('online')">Online 對戰</button>
+                        <button class="pill-btn secondary" onclick="showApp('hub')">返回遊戲大廳</button>
                     </div>
                 </div>
 
-                <!-- Online Lobby (Room List) -->
-                <div id="online-lobby" class="hidden">
-                    <h3>選擇房間</h3>
-                    <div class="room-grid">
-                        <div class="room-card" onclick="joinRoom('room1')">
-                            <div class="room-name">Room 1</div>
-                            <div class="room-stats"><span id="room1-count">--</span></div>
-                        </div>
-                        <div class="room-card" onclick="joinRoom('room2')">
-                            <div class="room-name">Room 2</div>
-                            <div class="room-stats"><span id="room2-count">--</span></div>
-                        </div>
-                        <div class="room-card" onclick="joinRoom('room3')">
-                            <div class="room-name">Room 3</div>
-                            <div class="room-stats"><span id="room3-count">--</span></div>
+                <!-- Game Container (Hidden on Landing) -->
+                <div id="game-container" class="hidden">
+
+                    <!-- VS AI Specific Controls -->
+                    <div id="ai-controls" class="hidden">
+                        <div class="controls-card">
+                            <label for="difficulty">難度：</label>
+                            <select id="difficulty" class="pill-select">
+                                <option value="easy">Easy</option>
+                                <option value="medium">Medium</option>
+                                <option value="hard" selected>Hard</option>
+                            </select>
+                            <button class="pill-btn secondary" onclick="backToLanding()">返回選單</button>
                         </div>
                     </div>
-                    <button class="pill-btn secondary" onclick="backToLanding()">返回主選單</button>
+
+                    <!-- Online Lobby (Room List) -->
+                    <div id="online-lobby" class="hidden">
+                        <h3>選擇房間</h3>
+                        <div class="room-grid">
+                            <div class="room-card" onclick="joinRoom('room1')">
+                                <div class="room-name">Room 1</div>
+                                <div class="room-stats"><span id="room1-count">--</span></div>
+                            </div>
+                            <div class="room-card" onclick="joinRoom('room2')">
+                                <div class="room-name">Room 2</div>
+                                <div class="room-stats"><span id="room2-count">--</span></div>
+                            </div>
+                            <div class="room-card" onclick="joinRoom('room3')">
+                                <div class="room-name">Room 3</div>
+                                <div class="room-stats"><span id="room3-count">--</span></div>
+                            </div>
+                        </div>
+                        <button class="pill-btn secondary" onclick="backToLanding()">返回選單</button>
+                    </div>
+
+                    <!-- Online Room View (Board + Details) -->
+                    <div id="online-room" class="hidden">
+                        <div class="room-header-card">
+                            <div class="room-status">
+                                <span class="label">房間：</span><span id="current-room-id" class="value"></span>
+                                <span class="divider">|</span>
+                                <span class="label">身份：</span><span id="my-role" class="value">觀眾</span>
+                            </div>
+                        </div>
+
+                        <div id="role-selection">
+                            <button id="btn-claim-black" class="pill-btn role-btn"
+                                onclick="becomePlayer('black')">成為黑子玩家</button>
+                            <button id="btn-claim-white" class="pill-btn role-btn"
+                                onclick="becomePlayer('white')">成為白子玩家</button>
+                            <button id="btn-claim-spec" class="pill-btn role-btn secondary"
+                                onclick="becomeSpectator()">成為觀戰者</button>
+                        </div>
+
+                        <div class="room-actions">
+                            <button id="online-start-btn" class="pill-btn action-btn hidden"
+                                onclick="startOnlineGame()">開始遊戲</button>
+                            <button id="leave-room-btn" class="pill-btn danger-btn" onclick="leaveRoom()">退出房間</button>
+                        </div>
+                    </div>
+
+                    <!-- Common Game Elements (Board, Status) -->
+                    <div id="game-board-area" class="hidden">
+                        <div class="board-frame">
+                            <div id="board"></div>
+                        </div>
+                        <div id="status-bar">
+                            <div id="status">當前回合：<span class="player-turn">黑子</span></div>
+                        </div>
+                        <button id="reset-btn" class="pill-btn action-btn" onclick="resetGame()">重新開始</button>
+                    </div>
+
                 </div>
+            </main>
+        </div>
 
-                <!-- Online Room View (Board + Details) -->
-                <div id="online-room" class="hidden">
-                    <div class="room-header-card">
-                        <div class="room-status">
-                            <span class="label">房間：</span><span id="current-room-id" class="value"></span>
-                            <span class="divider">|</span>
-                            <span class="label">身份：</span><span id="my-role" class="value">觀眾</span>
+        <!-- Penny Crush App -->
+        <div id="app-penny-crush" class="hidden">
+            <div class="penny-center-wrapper">
+                <main class="switch-card penny-container">
+                    <header class="penny-header">
+                        <h1>Penny Crush</h1>
+                        <div class="score-board">Score: <span id="pc-score">0</span></div>
+                    </header>
+
+                    <div id="pc-menu">
+                        <p class="menu-label">Select Board Size:</p>
+                        <button class="pill-btn pc-btn" onclick="PennyCrush.init(12)">12x12 (Normal)</button>
+                        <button class="pill-btn pc-btn" onclick="PennyCrush.init(16)">16x16 (Hard)</button>
+                        <button class="pill-btn pc-btn" onclick="PennyCrush.init(20)">20x20 (Extreme)</button>
+                        <button class="pill-btn secondary" onclick="showApp('hub')">Back to Menu</button>
+                    </div>
+
+                    <div id="pc-game" class="hidden">
+                        <div id="pc-grid" class="pc-grid"></div>
+                        <div class="pc-controls">
+                            <button id="btn-shuffle" class="pill-btn secondary"
+                                onclick="PennyCrush.shuffleBoard()">Shuffle (3)</button>
+                            <button class="pill-btn secondary" onclick="PennyCrush.restart()">Restart</button>
+                            <button class="pill-btn secondary" onclick="PennyCrush.exit()">Back to Menu</button>
                         </div>
                     </div>
-
-                    <div id="role-selection">
-                        <button id="btn-claim-black" class="pill-btn role-btn"
-                            onclick="becomePlayer('black')">成為黑子玩家</button>
-                        <button id="btn-claim-white" class="pill-btn role-btn"
-                            onclick="becomePlayer('white')">成為白子玩家</button>
-                        <button id="btn-claim-spec" class="pill-btn role-btn secondary"
-                            onclick="becomeSpectator()">成為觀戰者</button>
-                    </div>
-
-                    <div class="room-actions">
-                        <button id="online-start-btn" class="pill-btn action-btn hidden"
-                            onclick="startOnlineGame()">開始遊戲</button>
-                        <button id="leave-room-btn" class="pill-btn danger-btn" onclick="leaveRoom()">退出房間</button>
-                    </div>
-                </div>
-
-                <!-- Common Game Elements (Board, Status) -->
-                <div id="game-board-area" class="hidden">
-                    <div class="board-frame">
-                        <div id="board"></div>
-                    </div>
-                    <div id="status-bar">
-                        <div id="status">當前回合：<span class="player-turn">黑子</span></div>
-                    </div>
-                    <button id="reset-btn" class="pill-btn action-btn" onclick="resetGame()">重新開始</button>
-                </div>
-
+                </main>
             </div>
-        </main>
+        </div>
     </div>
     <!-- Firebase App (the core Firebase SDK) is always required and must be listed first -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>

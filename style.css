@@ -487,3 +487,308 @@ h1 {
         grid-template-columns: 1fr;
     }
 }
+
+/* Game Hub Styles */
+.hub-header {
+    text-align: center;
+}
+
+.hub-header h1 {
+    color: var(--neon-cyan);
+    font-size: 2.5rem;
+    text-shadow: 0 0 15px rgba(34, 211, 238, 0.4);
+    margin-bottom: 2rem;
+}
+
+.hub-grid {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.game-hub-card {
+    background: rgba(255, 255, 255, 0.05);
+    /* Slightly lighter than bg */
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    padding: 2rem;
+    width: 250px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+}
+
+.game-hub-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(34, 211, 238, 0.15);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.card-icon {
+    font-size: 4rem;
+    margin-bottom: 10px;
+}
+
+/* Penny Crush Styles */
+#app-penny-crush {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    /* Manage scroll internally if needed */
+}
+
+.penny-center-wrapper {
+    width: 100%;
+    max-height: 100%;
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+    overflow-y: auto;
+    /* Allow vertical scroll if board is huge on small screen */
+}
+
+.penny-container {
+    max-width: fit-content;
+    /* Allow growing for board */
+    min-width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.penny-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 20px;
+}
+
+.penny-header h1 {
+    font-family: 'Outfit', sans-serif;
+    background: linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.score-board {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 8px 16px;
+    border-radius: 20px;
+    white-space: nowrap;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.menu-label {
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+}
+
+#pc-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+}
+
+.pc-grid {
+    display: grid;
+    gap: 4px;
+    /* Tighter gap for large boards */
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 12px;
+    margin: 0 auto 20px auto;
+    /* Columns defined dynamically by JS */
+}
+
+.pc-tile {
+    /* Size defined dynamically by --tile-size */
+    width: var(--tile-size, 40px);
+    height: var(--tile-size, 40px);
+    cursor: pointer;
+    transition: transform 0.2s, background-color 0.2s;
+    position: relative;
+    /* Default centering for shapes */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pill-btn:hover {
+    transform: scale(1.05);
+    background: #444;
+}
+
+.pill-btn:disabled,
+.pill-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    background: #555;
+    color: #aaa;
+}
+
+.pc-tile.selected .candy-shape {
+    transform: scale(1.15);
+    filter: brightness(1.2);
+    box-shadow: 0 0 15px 2px rgba(255, 255, 255, 0.8);
+    position: relative;
+    z-index: 20;
+}
+
+/* --- Candy Shapes with Gloss --- */
+/* Common wrapper for shape to handle scale/shadow independently of grid cell */
+.candy-shape {
+    width: 85%;
+    height: 85%;
+    position: relative;
+    box-shadow: 2px 3px 4px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s;
+}
+
+/* Glossy Shine Overlay */
+.candy-shape::after {
+    content: '';
+    position: absolute;
+    top: 5%;
+    left: 5%;
+    width: 90%;
+    height: 50%;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 100%);
+    border-radius: inherit;
+    /* Follows parent shape */
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* 1. RED HEART */
+.pc-tile.pc-red .candy-shape {
+    background: radial-gradient(circle at 30% 30%, #ff758c 0%, #ff0f4b 100%);
+    clip-path: polygon(50% 15%, 61% 5%, 75% 5%, 90% 20%, 90% 40%, 50% 90%, 10% 40%, 10% 20%, 25% 5%, 39% 5%);
+    /* Manual Heart clip-path approximation or SVG mask could be used. 
+       Let's use a simpler masking or just a rounded square if clip-path is tricky for gloss.
+       Attempting CSS Shape: */
+    border-radius: 0;
+}
+
+/* Bevel for Heart (simulated) */
+/* Actually, simple visual: Circle, Rounded Square, Diamond, Star, Triangle */
+
+/* Let's stick to standard shapes that support border-radius nicely for gloss */
+
+/* RED: CIRCLE */
+.pc-tile.pc-red .candy-shape {
+    background: radial-gradient(circle at 35% 25%, #ff758c 0%, #ff0f4b 100%);
+    border-radius: 50%;
+}
+
+/* ORANGE: ROUNDED SQUARE */
+.pc-tile.pc-orange .candy-shape {
+    background: linear-gradient(135deg, #ffd166 0%, #ff9e00 100%);
+    border-radius: 8px;
+}
+
+/* YELLOW: DIAMOND (Rotated Square) */
+.pc-tile.pc-yellow .candy-shape {
+    background: linear-gradient(135deg, #ffffcc 0%, #f1c40f 100%);
+    border-radius: 4px;
+    transform: rotate(45deg) scale(0.85);
+    /* Rotate inside */
+    box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    /* Adjust shadow direction if needed */
+}
+
+/* Correct gloss for rotated? It rotates too. Acceptable. */
+
+/* GREEN: HEXAGON/START/SQUARE? Let's go with ROUNDED PILL or just another rounded rect */
+/* Let's try TRIANGLE using clip-path? Gloss breaks on Clip-path sometimes. 
+   Safe bet: slightly different rounded rect */
+.pc-tile.pc-green .candy-shape {
+    background: radial-gradient(circle at 30% 30%, #a8e6cf 0%, #2ecc71 100%);
+    border-radius: 50% 50% 5px 5px;
+    /* Dome shape */
+}
+
+/* BLUE: STAR (Simulated with clip path? No, let's use standard shapes for robustness) */
+/* ROUNDED RECT with border? */
+.pc-tile.pc-blue .candy-shape {
+    background: radial-gradient(circle at 30% 30%, #8ec5fc 0%, #3498db 100%);
+    border-radius: 12px 0 12px 0;
+    /* Leaf/Petal shape */
+}
+
+/* PURPLE: RECT */
+.pc-tile.pc-purple .candy-shape {
+    background: radial-gradient(circle at 30% 30%, #e0c3fc 0%, #8e44ad 100%);
+    border-radius: 4px;
+    transform: scale(0.9);
+}
+
+
+/* Animations */
+@keyframes pc-pop {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.4);
+        opacity: 0.8;
+    }
+
+    100% {
+        transform: scale(0);
+        opacity: 0;
+    }
+}
+
+.pc-pop .candy-shape {
+    /* Animate inner shape */
+    animation: pc-pop 0.3s forwards;
+}
+
+@keyframes pc-shake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    25% {
+        transform: translateX(-5px);
+    }
+
+    75% {
+        transform: translateX(5px);
+    }
+}
+
+.pc-shake {
+    animation: pc-shake 0.3s;
+}
+
+.pc-controls {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    width: 100%;
+}

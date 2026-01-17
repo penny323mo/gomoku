@@ -1036,3 +1036,463 @@ window.addEventListener('beforeunload', () => {
         leaveRoom();
     }
 });
+
+// --- Game Hub Navigation ---
+function showApp(appName) {
+    // Hide all main containers
+    document.getElementById('app-hub').classList.add('hidden');
+    document.getElementById('app-gomoku').classList.add('hidden');
+    document.getElementById('app-penny-crush').classList.add('hidden');
+
+    // Show selected
+    if (appName === 'hub') {
+        document.getElementById('app-hub').classList.remove('hidden');
+        // Stop any active games
+        PennyCrush.stop();
+        // If exiting Gomoku online, we might want to cleanup? 
+        // backToLanding() handles cleanup if called manually, but here we are forcing switch.
+        // Let's ensure we are clean.
+        if (mode === 'online') {
+            leaveRoom();
+            stopLobbyListeners();
+        }
+    } else if (appName === 'gomoku') {
+        document.getElementById('app-gomoku').classList.remove('hidden');
+        showView('landing'); // Reset to landing or keep state? Landing is safer.
+    } else if (appName === 'pennyCrush') {
+        document.getElementById('app-penny-crush').classList.remove('hidden');
+        document.getElementById('pc-menu').classList.remove('hidden');
+        document.getElementById('pc-game').classList.add('hidden');
+    }
+}
+
+// --- Penny Crush Game Logic ---
+const PennyCrush = {
+    gridSize: 4,
+    grid: [], // 2D array of strings (colors)
+    score: 0,
+    selectedTile: null, // {r, c}
+    isProcessing: false,
+    colors: ['pc-red', 'pc-orange', 'pc-yellow', 'pc-green', 'pc-blue', 'pc-purple'],
+
+    init: function (size) {
+        this.gridSize = size;
+        this.gridSize = size;
+        this.score = 0;
+        this.selectedTile = null;
+        this.isProcessing = false;
+        this.shuffleRemaining = 3;
+        this.updateScore(0);
+        this.updateShuffleBtn();
+
+        document.getElementById('pc-menu').classList.add('hidden');
+        document.getElementById('pc-game').classList.remove('hidden');
+
+        // --- Dynamic Scaling ---
+        // Calculate max available space. 
+        // We want to fit within e.g. 500px width on desktop, or full width on mobile.
+        // And also fit vertically within (Height - Header - Controls - Padding)
+
+        const gridEl = document.getElementById('pc-grid');
+
+        // Safety margins
+        const maxW = Math.min(window.innerWidth - 40, 600);
+        const maxH = window.innerHeight - 200; // Account for header/controls
+
+        // Ideal square size
+        const bindDim = Math.min(maxW, maxH);
+
+        // Calculate tile size (deduct gap)
+        const gap = 4;
+        let tileSize = Math.floor((bindDim - (gap * (size - 1))) / size);
+
+        // Clamp min/max for sanity
+        tileSize = Math.max(20, Math.min(tileSize, 50));
+
+        // Set CSS Variable
+        gridEl.style.setProperty('--tile-size', `${tileSize}px`);
+        gridEl.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
+
+        this.generateGrid();
+        this.renderGrid();
+    },
+
+    stop: function () {
+        this.isProcessing = false;
+    },
+
+    restart: function () {
+        this.init(this.gridSize);
+    },
+
+    exit: function () {
+        showApp('hub');
+    },
+
+    updateScore: function (add) {
+        this.score += add;
+        document.getElementById('pc-score').textContent = this.score;
+    },
+
+    generateGrid: function () {
+        this.grid = [];
+        for (let r = 0; r < this.gridSize; r++) {
+            const row = [];
+            for (let c = 0; c < this.gridSize; c++) {
+                row.push(this.getRandomColor());
+            }
+            this.grid.push(row);
+        }
+        // Resolve initial matches without score
+        let matches = this.findMatches();
+        let safety = 0;
+        while (matches.length > 0 && safety < 100) {
+            matches.forEach(m => {
+                this.grid[m.r][m.c] = this.getRandomColor();
+            });
+            matches = this.findMatches();
+            safety++;
+        }
+    },
+
+    getRandomColor: function () {
+        return this.colors[Math.floor(Math.random() * this.colors.length)];
+    },
+
+    renderGrid: function () {
+        const gridEl = document.getElementById('pc-grid');
+        gridEl.innerHTML = '';
+
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                const tile = document.createElement('div');
+                tile.className = `pc-tile ${this.grid[r][c]}`;
+                tile.dataset.r = r;
+                tile.dataset.c = c;
+
+                // Add Candy Shape Inner
+                const shape = document.createElement('div');
+                shape.className = 'candy-shape';
+                tile.appendChild(shape);
+
+                if (this.selectedTile && this.selectedTile.r === r && this.selectedTile.c === c) {
+                    tile.classList.add('selected');
+                }
+
+                tile.onclick = () => this.handleTileClick(r, c);
+                gridEl.appendChild(tile);
+            }
+        }
+    },
+
+    handleTileClick: function (r, c) {
+        if (this.isProcessing) return;
+
+        // Deselect if same
+        if (this.selectedTile && this.selectedTile.r === r && this.selectedTile.c === c) {
+            this.selectedTile = null;
+            this.renderGrid();
+            return;
+        }
+
+        // Select first
+        if (!this.selectedTile) {
+            this.selectedTile = { r, c };
+            this.renderGrid();
+            return;
+        }
+
+        // Swap processing
+        const r1 = this.selectedTile.r;
+        const c1 = this.selectedTile.c;
+        const r2 = r;
+        const c2 = c;
+
+        // Check adjacency
+        const isAdjacent = (Math.abs(r1 - r2) === 1 && c1 === c2) || (Math.abs(c1 - c2) === 1 && r1 === r2);
+
+        if (isAdjacent) {
+            this.swapTiles(r1, c1, r2, c2);
+        } else {
+            // New selection
+            this.selectedTile = { r, c };
+            this.renderGrid();
+        }
+    },
+
+    swapTiles: async function (r1, c1, r2, c2) {
+        this.isProcessing = true;
+        this.selectedTile = null;
+
+        // Swap data
+        const temp = this.grid[r1][c1];
+        this.grid[r1][c1] = this.grid[r2][c2];
+        this.grid[r2][c2] = temp;
+
+        this.renderGrid();
+
+        // Check match
+        const matches = this.findMatches();
+
+        if (matches.length > 0) {
+            await this.processMatches(matches);
+        } else {
+            // Revert animation
+            const t1 = document.querySelector(`.pc-tile[data-r="${r1}"][data-c="${c1}"]`);
+            const t2 = document.querySelector(`.pc-tile[data-r="${r2}"][data-c="${c2}"]`);
+            t1.classList.add('pc-shake');
+            t2.classList.add('pc-shake');
+
+            await new Promise(r => setTimeout(r, 300));
+
+            // Revert data
+            const temp = this.grid[r1][c1];
+            this.grid[r1][c1] = this.grid[r2][c2];
+            this.grid[r2][c2] = temp;
+
+            this.isProcessing = false;
+            this.renderGrid();
+        }
+    },
+
+    findMatches: function () {
+        const matches = []; // Array of {r, c} strings "r,c" to avoid duplicates
+        const matchedSet = new Set();
+
+        // Horizontal
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize - 2; c++) {
+                const color = this.grid[r][c];
+                if (color === this.grid[r][c + 1] && color === this.grid[r][c + 2]) {
+                    matchedSet.add(`${r},${c}`);
+                    matchedSet.add(`${r},${c + 1}`);
+                    matchedSet.add(`${r},${c + 2}`);
+                    // Check further
+                    let k = c + 3;
+                    while (k < this.gridSize && this.grid[r][k] === color) {
+                        matchedSet.add(`${r},${k}`);
+                        k++;
+                    }
+                }
+            }
+        }
+
+        // Vertical
+        for (let c = 0; c < this.gridSize; c++) {
+            for (let r = 0; r < this.gridSize - 2; r++) {
+                const color = this.grid[r][c];
+                if (color === this.grid[r + 1][c] && color === this.grid[r + 2][c]) {
+                    matchedSet.add(`${r},${c}`);
+                    matchedSet.add(`${r + 1},${c}`);
+                    matchedSet.add(`${r + 2},${c}`);
+                    let k = r + 3;
+                    while (k < this.gridSize && this.grid[k][c] === color) {
+                        matchedSet.add(`${k},${c}`);
+                        k++;
+                    }
+                }
+            }
+        }
+
+        matchedSet.forEach(str => {
+            const parts = str.split(',');
+            matches.push({ r: parseInt(parts[0]), c: parseInt(parts[1]) });
+        });
+
+        return matches;
+    },
+
+    processMatches: async function (matches) {
+        // Highlight Matches
+        matches.forEach(m => {
+            const tile = document.querySelector(`.pc-tile[data-r="${m.r}"][data-c="${m.c}"]`);
+            if (tile) tile.classList.add('pc-pop');
+        });
+
+        await new Promise(r => setTimeout(r, 300));
+
+        // Remove and Score
+        this.updateScore(matches.length * 10); // Simple scoring
+
+        // Remove from grid (set to null)
+        matches.forEach(m => {
+            this.grid[m.r][m.c] = null;
+        });
+
+        // Gravity
+        await this.applyGravity();
+
+        // Check new matches
+        const newMatches = this.findMatches();
+        if (newMatches.length > 0) {
+            await this.processMatches(newMatches);
+        } else {
+            this.isProcessing = false;
+        }
+    },
+
+    applyGravity: async function () {
+        // Move tiles down
+        for (let c = 0; c < this.gridSize; c++) {
+            let emptyCount = 0;
+            for (let r = this.gridSize - 1; r >= 0; r--) {
+                if (this.grid[r][c] === null) {
+                    emptyCount++;
+                } else if (emptyCount > 0) {
+                    // Move down
+                    this.grid[r + emptyCount][c] = this.grid[r][c];
+                    this.grid[r][c] = null;
+
+                    // Simple logic: we just moved one stone. 
+                    // To support full cascade correctly in one pass is tricky.
+                    // Actually, simpler approach: collect column, filter nulls, prepend new.
+                }
+            }
+
+            // Refill top
+            for (let r = 0; r < emptyCount; r++) {
+                this.grid[r][c] = this.getRandomColor();
+            }
+        }
+
+        this.renderGrid();
+        // Allow a small delay for "falling" viz if we animation later, 
+        // for now instantaneous logic update.
+        await new Promise(r => setTimeout(r, 200));
+    },
+
+    // --- Shuffle Feature ---
+    shuffleRemaining: 3,
+
+    shuffleBoard: function () {
+        if (this.isProcessing || this.shuffleRemaining <= 0) return;
+
+        // Decrement and Update UI
+        this.shuffleRemaining--;
+        this.updateShuffleBtn();
+
+        // 1. Collect all non-null tiles (flatten)
+        let tiles = [];
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                if (this.grid[r][c]) {
+                    tiles.push(this.grid[r][c]);
+                } else {
+                    // Should rarely occur unless mid-processing, but fill just in case
+                    tiles.push(this.getRandomColor());
+                }
+            }
+        }
+
+        // 2. Fisher-Yates Shuffle
+        // Try shuffling until we find a solvable board or hit limit
+        let attempts = 0;
+        let solvable = false;
+
+        while (attempts < 10 && !solvable) {
+            // Shuffle array
+            for (let i = tiles.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
+            }
+
+            // Fill Grid temporarily
+            let idx = 0;
+            for (let r = 0; r < this.gridSize; r++) {
+                for (let c = 0; c < this.gridSize; c++) {
+                    this.grid[r][c] = tiles[idx++];
+                }
+            }
+
+            // Check solvability
+            if (this.hasPossibleMove()) {
+                solvable = true;
+            }
+            attempts++;
+        }
+
+        // 3. Render
+        this.renderGrid();
+
+        // Optional: Check matches immediately created by shuffle?
+        // Usually, Candy Crush allows this and just processes them.
+        // Let's check matches.
+        const matches = this.findMatches();
+        if (matches.length > 0) {
+            this.processMatches(matches);
+        }
+    },
+
+    updateShuffleBtn: function () {
+        const btn = document.getElementById('btn-shuffle');
+        if (!btn) return;
+        btn.textContent = `Shuffle (${this.shuffleRemaining})`;
+        if (this.shuffleRemaining <= 0) {
+            btn.disabled = true;
+            btn.classList.add('disabled');
+        } else {
+            btn.disabled = false;
+            btn.classList.remove('disabled');
+        }
+    },
+
+    hasPossibleMove: function () {
+        // Simple check: try swapping every horizontal pair and vertical pair
+        // Horizontal
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize - 1; c++) {
+                // Swap (r,c) and (r,c+1)
+                this.tempSwap(r, c, r, c + 1);
+                const hasMatch = this.checkMatchAt(r, c) || this.checkMatchAt(r, c + 1);
+                this.tempSwap(r, c, r, c + 1); // Swap back
+                if (hasMatch) return true;
+            }
+        }
+        // Vertical
+        for (let r = 0; r < this.gridSize - 1; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                // Swap (r,c) and (r+1,c)
+                this.tempSwap(r, c, r + 1, c);
+                const hasMatch = this.checkMatchAt(r, c) || this.checkMatchAt(r + 1, c);
+                this.tempSwap(r, c, r + 1, c); // Swap back
+                if (hasMatch) return true;
+            }
+        }
+        return false;
+    },
+
+    tempSwap: function (r1, c1, r2, c2) {
+        const temp = this.grid[r1][c1];
+        this.grid[r1][c1] = this.grid[r2][c2];
+        this.grid[r2][c2] = temp;
+    },
+
+    checkMatchAt: function (r, c) {
+        const color = this.grid[r][c];
+        if (!color) return false;
+
+        // Horiz Check: (c-2, c-1, c), (c-1, c, c+1), (c, c+1, c+2)
+        // Simplest: check line length at this point
+        // Horizontal scan through this point
+        let hCount = 1;
+        // left
+        let k = c - 1;
+        while (k >= 0 && this.grid[r][k] === color) { hCount++; k--; }
+        // right
+        k = c + 1;
+        while (k < this.gridSize && this.grid[r][k] === color) { hCount++; k++; }
+        if (hCount >= 3) return true;
+
+        // Vertical scan
+        let vCount = 1;
+        // up
+        k = r - 1;
+        while (k >= 0 && this.grid[k][c] === color) { vCount++; k--; }
+        // down
+        k = r + 1;
+        while (k < this.gridSize && this.grid[k][c] === color) { vCount++; k++; }
+        if (vCount >= 3) return true;
+
+        return false;
+    }
+};
