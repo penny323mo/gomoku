@@ -1,4 +1,7 @@
-import { supabase } from './supabaseClient.js';
+const SUPABASE_URL = "https://djbhipofzbonxfqriovi.supabase.co";
+const SUPABASE_ANON_KEY = "sb-publishable-DX7aNwHHI7tb6RUiWWe0qg_qPzuLcld";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 
 const BOARD_SIZE = 15;
 const boardElement = document.getElementById('board');
@@ -90,15 +93,17 @@ function selectMode(selectedMode) {
     } else if (mode === 'online') {
         showView('online-lobby');
         isVsAI = false;
-        // listenToRoomCounts(); // Removed in Supabase refactor
+        showView('online-lobby');
+        isVsAI = false;
+        // listenToRoomCounts removed
     }
 }
 
 function backToLanding() {
-    stopHeartbeat();
+    // stopHeartbeat removed
     if (mode === 'online') {
         leaveRoom(); // Helper to clean up if we were in a room
-        // stopLobbyListeners(); // Removed
+        // stopLobbyListeners removed
     }
     showView('landing');
 }
@@ -528,7 +533,7 @@ function showApp(appName) {
         // Let's ensure we are clean.
         if (mode === 'online') {
             leaveRoom();
-            // stopLobbyListeners(); // Removed: Not using lobby listeners in this version
+            // stopLobbyListeners removed
         }
     } else if (appName === 'gomoku') {
         document.getElementById('app-gomoku').classList.remove('hidden');
