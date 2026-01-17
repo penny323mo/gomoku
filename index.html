@@ -144,10 +144,18 @@
                     <div id="pc-game" class="hidden">
                         <div id="pc-grid" class="pc-grid"></div>
                         <div class="pc-controls">
-                            <button id="btn-shuffle" class="pill-btn secondary"
-                                onclick="PennyCrush.shuffleBoard()">Shuffle (3)</button>
-                            <button class="pill-btn secondary" onclick="PennyCrush.restart()">Restart</button>
-                            <button class="pill-btn secondary" onclick="PennyCrush.exit()">Back to Menu</button>
+                            <div class="pc-tools">
+                                <button id="btn-clean-one" class="pill-btn tool-btn"
+                                    onclick="PennyCrush.activateCleanOne()">🧹 Clean (3)</button>
+                                <button id="btn-forced-swap" class="pill-btn tool-btn"
+                                    onclick="PennyCrush.activateForcedSwap()">🔄 Swap (3)</button>
+                            </div>
+                            <div class="pc-actions">
+                                <button id="btn-shuffle" class="pill-btn secondary"
+                                    onclick="PennyCrush.shuffleBoard()">Shuffle (3)</button>
+                                <button class="pill-btn secondary" onclick="PennyCrush.restart()">Restart</button>
+                                <button class="pill-btn secondary" onclick="PennyCrush.exit()">Back to Menu</button>
+                            </div>
                         </div>
                     </div>
                 </main>

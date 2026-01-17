@@ -1069,21 +1069,37 @@ function showApp(appName) {
 // --- Penny Crush Game Logic ---
 const PennyCrush = {
     gridSize: 4,
-    grid: [], // 2D array of strings (colors)
+    grid: [], // 2D array of strings (colors or special tiles)
     score: 0,
     selectedTile: null, // {r, c}
     isProcessing: false,
     colors: ['pc-red', 'pc-orange', 'pc-yellow', 'pc-green', 'pc-blue', 'pc-purple'],
 
+    // Special tile types
+    specialTiles: ['pc-bomb', 'pc-row-bomb', 'pc-col-bomb', 'pc-rainbow'],
+
+    // Combo system
+    comboCount: 0,
+
+    // Item tools
+    cleanOneRemaining: 3,
+    forcedSwapRemaining: 3,
+    activeToolMode: null, // 'cleanOne' | 'forcedSwap' | null
+
     init: function (size) {
-        this.gridSize = size;
         this.gridSize = size;
         this.score = 0;
         this.selectedTile = null;
         this.isProcessing = false;
         this.shuffleRemaining = 3;
+        this.comboCount = 0;
+        this.cleanOneRemaining = 3;
+        this.forcedSwapRemaining = 3;
+        this.activeToolMode = null;
+
         this.updateScore(0);
         this.updateShuffleBtn();
+        this.updateToolButtons();
 
         document.getElementById('pc-menu').classList.add('hidden');
         document.getElementById('pc-game').classList.remove('hidden');
@@ -1217,8 +1233,9 @@ const PennyCrush = {
 
         for (let r = 0; r < this.gridSize; r++) {
             for (let c = 0; c < this.gridSize; c++) {
+                const tileType = this.grid[r][c];
                 const tile = document.createElement('div');
-                tile.className = `pc-tile ${this.grid[r][c]}`;
+                tile.className = `pc-tile ${tileType || ''}`;
                 tile.dataset.r = r;
                 tile.dataset.c = c;
 
@@ -1227,8 +1244,14 @@ const PennyCrush = {
                 shape.className = 'candy-shape';
                 tile.appendChild(shape);
 
+                // Selected state
                 if (this.selectedTile && this.selectedTile.r === r && this.selectedTile.c === c) {
                     tile.classList.add('selected');
+                }
+
+                // Tool mode cursor indicator
+                if (this.activeToolMode === 'cleanOne') {
+                    tile.classList.add('tool-target');
                 }
 
                 tile.onclick = () => this.handleTileClick(r, c);
@@ -1404,18 +1427,67 @@ const PennyCrush = {
 
     // --- Bomb Logic ---
 
-    // Updated handleTileClick for Bomb interaction is not needed if logic is in swapTiles ?
-    // Actually handleTileClick calls swapTiles which calls process.
-    // We need to intercept standard matching if a bomb is used.
-
     handleTileClick: function (r, c) {
         if (this.isProcessing) return;
+
+        // --- Clean One Tool Mode ---
+        if (this.activeToolMode === 'cleanOne') {
+            this.cleanOneRemaining--;
+            this.activeToolMode = null;
+            this.grid[r][c] = null;
+            this.updateToolButtons();
+            this.isProcessing = true;
+            this.turnClearedCount = 1;
+
+            // Animate and process
+            const tile = document.querySelector(`.pc-tile[data-r="${r}"][data-c="${c}"]`);
+            if (tile) tile.classList.add('pc-pop');
+
+            setTimeout(async () => {
+                await this.applyGravity();
+                const matches = this.findMatches();
+                if (matches.length > 0) {
+                    await this.processMatches(matches);
+                } else {
+                    this.finalizeTurn();
+                }
+            }, 300);
+            return;
+        }
 
         // Deselect if same
         if (this.selectedTile && this.selectedTile.r === r && this.selectedTile.c === c) {
             this.selectedTile = null;
+            this.activeToolMode = null;
+            this.updateToolButtons();
             this.renderGrid();
             return;
+        }
+
+        // --- Rainbow Ball Activation ---
+        if (this.selectedTile) {
+            const sel = this.selectedTile;
+            const selTile = this.grid[sel.r][sel.c];
+            const clickedTile = this.grid[r][c];
+
+            // If rainbow is selected and clicking a color tile
+            if (selTile === 'pc-rainbow' && this.colors.includes(clickedTile)) {
+                this.isProcessing = true;
+                this.selectedTile = null;
+                this.turnClearedCount = 0;
+                this.comboCount = 0;
+                this.useRainbow(sel.r, sel.c, clickedTile);
+                return;
+            }
+            // If clicking rainbow with a color selected
+            if (clickedTile === 'pc-rainbow' && this.colors.includes(selTile)) {
+                this.isProcessing = true;
+                this.selectedTile = null;
+                this.turnClearedCount = 0;
+                this.comboCount = 0;
+                this.useRainbow(r, c, selTile);
+                return;
+            }
         }
 
         // Select first
@@ -1435,7 +1507,15 @@ const PennyCrush = {
         const isAdjacent = (Math.abs(r1 - r2) === 1 && c1 === c2) || (Math.abs(c1 - c2) === 1 && r1 === r2);
 
         if (isAdjacent) {
-            this.swapTiles(r1, c1, r2, c2);
+            // --- Forced Swap Mode ---
+            if (this.activeToolMode === 'forcedSwap') {
+                this.forcedSwapRemaining--;
+                this.activeToolMode = null;
+                this.updateToolButtons();
+                this.swapTiles(r1, c1, r2, c2, true); // Force swap
+            } else {
+                this.swapTiles(r1, c1, r2, c2, false);
+            }
         } else {
             // New selection
             this.selectedTile = { r, c };
@@ -1443,9 +1523,10 @@ const PennyCrush = {
         }
     },
 
-    swapTiles: async function (r1, c1, r2, c2) {
+    swapTiles: async function (r1, c1, r2, c2, forceSwap = false) {
         this.isProcessing = true;
         this.selectedTile = null;
+        this.comboCount = 0; // Reset combo at start of turn
 
         // Swap data
         const temp = this.grid[r1][c1];
@@ -1454,61 +1535,64 @@ const PennyCrush = {
 
         this.renderGrid();
 
-        // Check Bomb Trigger
-        const isBomb1 = this.grid[r1][c1] === 'pc-bomb';
-        const isBomb2 = this.grid[r2][c2] === 'pc-bomb';
+        // Check Special Tile Triggers
+        const tile1 = this.grid[r1][c1];
+        const tile2 = this.grid[r2][c2];
 
-        if (isBomb1 || isBomb2) {
-            // Valid switch! Detonate!
-            // Wait for visual swap
+        // Cross Bomb (existing)
+        if (tile1 === 'pc-bomb' || tile2 === 'pc-bomb') {
             await new Promise(r => setTimeout(r, 200));
-
-            this.turnClearedCount = 0; // Reset for this move
-
-            // Collect bombs to detonate
+            this.turnClearedCount = 0;
             const bombsToDetonate = [];
-            if (isBomb1) bombsToDetonate.push({ r: r1, c: c1 });
-            if (isBomb2) bombsToDetonate.push({ r: r2, c: c2 });
-
+            if (tile1 === 'pc-bomb') bombsToDetonate.push({ r: r1, c: c1 });
+            if (tile2 === 'pc-bomb') bombsToDetonate.push({ r: r2, c: c2 });
             await this.detonateBombs(bombsToDetonate);
+            return;
+        }
 
-            // After bomb, check regular matches too? 
-            // Usually bomb destroys things, then gravity, then matches.
-            // detonateBombs triggers gravity and match loop.
+        // Row Bomb
+        if (tile1 === 'pc-row-bomb' || tile2 === 'pc-row-bomb') {
+            await new Promise(r => setTimeout(r, 200));
+            this.turnClearedCount = 0;
+            if (tile1 === 'pc-row-bomb') await this.detonateRowBomb(r1, c1);
+            if (tile2 === 'pc-row-bomb') await this.detonateRowBomb(r2, c2);
+            return;
+        }
+
+        // Column Bomb
+        if (tile1 === 'pc-col-bomb' || tile2 === 'pc-col-bomb') {
+            await new Promise(r => setTimeout(r, 200));
+            this.turnClearedCount = 0;
+            if (tile1 === 'pc-col-bomb') await this.detonateColBomb(r1, c1);
+            if (tile2 === 'pc-col-bomb') await this.detonateColBomb(r2, c2);
             return;
         }
 
         // Normal Match Check
         const matches = this.findMatches();
 
-        if (matches.length > 0) {
-            this.turnClearedCount = 0; // Reset count for this new move
-            await this.processMatches(matches);
-
-            // After cascade is ALL done (in processMatches recursion), 
-            // check for Bomb Spawn reward?
-            // processMatches calls applyGravity then findMatches...
-            // We need a way to know "Everything Settled".
-            // Since processMatches is recursive/async, we can't easily do it "after" strictly here without refactor.
-            // BUT: We can check turnClearedCount at the end of the chain.
-            // Or better: Inside processMatches, accumulate.
-            // And logic to spawn bomb?
-            // Let's create a 'settle' phase. 
-            // Actually, we can just check 'turnClearedCount' inside processMatches after gravity?
-            // No, we should do it when NO MORE matches found.
+        if (matches.length > 0 || forceSwap) {
+            this.turnClearedCount = 0;
+            if (matches.length > 0) {
+                await this.processMatches(matches);
+            } else {
+                // Forced swap with no matches - just apply gravity and finalize
+                await this.applyGravity();
+                this.finalizeTurn();
+            }
         } else {
             // Revert animation
             const t1 = document.querySelector(`.pc-tile[data-r="${r1}"][data-c="${c1}"]`);
             const t2 = document.querySelector(`.pc-tile[data-r="${r2}"][data-c="${c2}"]`);
-            t1.classList.add('pc-shake');
-            t2.classList.add('pc-shake');
+            if (t1) t1.classList.add('pc-shake');
+            if (t2) t2.classList.add('pc-shake');
 
             await new Promise(r => setTimeout(r, 300));
 
             // Revert data
-            const temp = this.grid[r1][c1];
+            const temp2 = this.grid[r1][c1];
             this.grid[r1][c1] = this.grid[r2][c2];
-            this.grid[r2][c2] = temp;
+            this.grid[r2][c2] = temp2;
 
             this.isProcessing = false;
             this.renderGrid();
@@ -1563,6 +1647,13 @@ const PennyCrush = {
     },
 
     processMatches: async function (matches) {
+        // Increment combo for chain reactions
+        this.comboCount++;
+
+        // Check for special tile spawn before clearing
+        const specialType = this.checkSpecialTileSpawn(matches);
+        const spawnPos = specialType ? matches[Math.floor(Math.random() * matches.length)] : null;
+
         // Highlight Matches
         matches.forEach(m => {
             const tile = document.querySelector(`.pc-tile[data-r="${m.r}"][data-c="${m.c}"]`);
@@ -1571,14 +1662,35 @@ const PennyCrush = {
 
         await new Promise(r => setTimeout(r, 300));
 
-        // Remove and Score
-        this.updateScore(matches.length * 10);
+        // Calculate score with combo multiplier
+        const multiplier = this.getComboMultiplier();
+        const points = matches.length * 10 * multiplier;
+        this.updateScore(points);
         this.turnClearedCount += matches.length;
 
-        // Remove from grid (set to null)
+        // Show score pop at first match position
+        if (matches.length > 0) {
+            this.showScorePop(matches[0].r, matches[0].c, points);
+        }
+
+        // Show combo text if multiplier > 1
+        if (multiplier > 1) {
+            this.showComboText(multiplier);
+        }
+
+        // Remove from grid (set to null), except spawn position
         matches.forEach(m => {
-            this.grid[m.r][m.c] = null;
+            if (spawnPos && m.r === spawnPos.r && m.c === spawnPos.c) {
+                // Keep this cell for special tile
+            } else {
+                this.grid[m.r][m.c] = null;
+            }
         });
+
+        // Spawn special tile if applicable
+        if (spawnPos && specialType) {
+            this.grid[spawnPos.r][spawnPos.c] = specialType;
+        }
 
         // Gravity
         await this.applyGravity();
@@ -1676,6 +1788,211 @@ const PennyCrush = {
         });
 
         return matches;
+    },
+
+    // --- Tool Button Updates ---
+    updateToolButtons: function () {
+        const cleanBtn = document.getElementById('btn-clean-one');
+        const swapBtn = document.getElementById('btn-forced-swap');
+
+        if (cleanBtn) {
+            cleanBtn.textContent = `🧹 Clean (${this.cleanOneRemaining})`;
+            cleanBtn.disabled = this.cleanOneRemaining <= 0;
+            cleanBtn.classList.toggle('active-tool', this.activeToolMode === 'cleanOne');
+        }
+        if (swapBtn) {
+            swapBtn.textContent = `🔄 Swap (${this.forcedSwapRemaining})`;
+            swapBtn.disabled = this.forcedSwapRemaining <= 0;
+            swapBtn.classList.toggle('active-tool', this.activeToolMode === 'forcedSwap');
+        }
+    },
+
+    // --- Tool Activation ---
+    activateCleanOne: function () {
+        if (this.cleanOneRemaining <= 0 || this.isProcessing) return;
+        this.activeToolMode = this.activeToolMode === 'cleanOne' ? null : 'cleanOne';
+        this.selectedTile = null;
+        this.updateToolButtons();
+        this.renderGrid();
+    },
+
+    activateForcedSwap: function () {
+        if (this.forcedSwapRemaining <= 0 || this.isProcessing) return;
+        this.activeToolMode = this.activeToolMode === 'forcedSwap' ? null : 'forcedSwap';
+        this.selectedTile = null;
+        this.updateToolButtons();
+        this.renderGrid();
+    },
+
+    // --- Score Pop Animation ---
+    showScorePop: function (r, c, points) {
+        const gridEl = document.getElementById('pc-grid');
+        if (!gridEl) return;
+
+        const pop = document.createElement('div');
+        pop.className = 'score-pop';
+        pop.textContent = `+${points}`;
+
+        // Position relative to grid
+        const tileSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) || 30;
+        pop.style.left = `${c * tileSize + tileSize / 2}px`;
+        pop.style.top = `${r * tileSize}px`;
+
+        gridEl.appendChild(pop);
+
+        setTimeout(() => pop.remove(), 800);
+    },
+
+    // --- Combo Text Animation ---
+    showComboText: function (multiplier) {
+        if (multiplier < 2) return;
+
+        const container = document.getElementById('app-penny-crush');
+        if (!container) return;
+
+        const combo = document.createElement('div');
+        combo.className = 'combo-text';
+        combo.textContent = `COMBO x${multiplier}!`;
+
+        container.appendChild(combo);
+
+        setTimeout(() => combo.remove(), 1200);
+    },
+
+    // --- Score with Combo Multiplier ---
+    getComboMultiplier: function () {
+        if (this.comboCount <= 1) return 1;
+        if (this.comboCount === 2) return 2;
+        if (this.comboCount === 3) return 3;
+        return 4; // Max x4
+    },
+
+    // --- Check for Special Tile Spawn ---
+    checkSpecialTileSpawn: function (matches) {
+        // Analyze match patterns
+        // 4 in a row horizontally -> row bomb
+        // 4 in a row vertically -> column bomb
+        // 5+ match -> rainbow ball
+
+        if (matches.length >= 5) {
+            return 'pc-rainbow';
+        }
+
+        // Check for 4 in a row patterns
+        const rows = {};
+        const cols = {};
+        matches.forEach(m => {
+            rows[m.r] = (rows[m.r] || 0) + 1;
+            cols[m.c] = (cols[m.c] || 0) + 1;
+        });
+
+        for (let r in rows) {
+            if (rows[r] >= 4) return 'pc-row-bomb';
+        }
+        for (let c in cols) {
+            if (cols[c] >= 4) return 'pc-col-bomb';
+        }
+
+        return null;
+    },
+
+    // --- Spawn Special Tile ---
+    spawnSpecialTile: function (type, matches) {
+        if (!type || matches.length === 0) return;
+
+        // Spawn at random position from match
+        const pos = matches[Math.floor(Math.random() * matches.length)];
+        this.grid[pos.r][pos.c] = type;
+    },
+
+    // --- Row Bomb Detonation ---
+    detonateRowBomb: async function (r, c) {
+        const toClear = new Set();
+
+        // Clear entire row
+        for (let col = 0; col < this.gridSize; col++) {
+            toClear.add(`${r},${col}`);
+        }
+
+        await this.clearTiles(toClear, 25);
+    },
+
+    // --- Column Bomb Detonation ---
+    detonateColBomb: async function (r, c) {
+        const toClear = new Set();
+
+        // Clear entire column
+        for (let row = 0; row < this.gridSize; row++) {
+            toClear.add(`${row},${c}`);
+        }
+
+        await this.clearTiles(toClear, 25);
+    },
+
+    // --- Rainbow Ball Effect ---
+    useRainbow: async function (r, c, targetColor) {
+        const toClear = new Set();
+
+        // Find all tiles of target color
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                if (this.grid[row][col] === targetColor) {
+                    toClear.add(`${row},${col}`);
+                }
+            }
+        }
+
+        // Also clear the rainbow tile itself
+        toClear.add(`${r},${c}`);
+
+        await this.clearTiles(toClear, 30);
+    },
+
+    // --- Generic Tile Clear with Animation ---
+    clearTiles: async function (tileSet, pointsPerTile) {
+        // Visualize
+        tileSet.forEach(str => {
+            const [r, c] = str.split(',').map(Number);
+            const tile = document.querySelector(`.pc-tile[data-r="${r}"][data-c="${c}"]`);
+            if (tile) tile.classList.add('pc-pop');
+        });
+
+        await new Promise(r => setTimeout(r, 300));
+
+        // Score with combo
+        const multiplier = this.getComboMultiplier();
+        const points = tileSet.size * pointsPerTile * multiplier;
+        this.updateScore(points);
+        this.turnClearedCount += tileSet.size;
+
+        // Show score pop at center of cleared area
+        if (tileSet.size > 0) {
+            const first = [...tileSet][0].split(',').map(Number);
+            this.showScorePop(first[0], first[1], points);
+        }
+
+        // Clear Data
+        tileSet.forEach(str => {
+            const [r, c] = str.split(',').map(Number);
+            this.grid[r][c] = null;
+        });
+
+        // Gravity
+        await this.applyGravity();
+
+        // Resume match checking
+        const newMatches = this.findMatches();
+        if (newMatches.length > 0) {
+            await this.processMatches(newMatches);
+        } else {
+            this.finalizeTurn();
+        }
+    },
+
+    // --- Check if tile is special ---
+    isSpecialTile: function (r, c) {
+        const tile = this.grid[r][c];
+        return this.specialTiles.includes(tile);
     }
 };
 
