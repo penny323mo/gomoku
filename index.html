@@ -19,7 +19,25 @@
                 <button class="nav-btn prev-btn" onclick="prevGame()">&#10094;</button>
                 <div class="carousel-track-container">
                     <ul class="carousel-track" id="game-carousel">
-                        <!-- Cards injected via JS -->
+                        <!-- Static Fallback Items (Will be replaced by JS if it runs) -->
+                        <li class="game-hub-card" data-game-id="gomoku" onclick="showApp('gomoku')">
+                            <div class="card-icon">⚫⚪</div>
+                            <h2>Gomoku</h2>
+                            <p>Classic strategy game.</p>
+                            <button class="pill-btn primary">Play</button>
+                        </li>
+                        <li class="game-hub-card" data-game-id="pennycrush" onclick="showApp('pennyCrush')">
+                            <div class="card-icon">🍬</div>
+                            <h2>Penny Crush</h2>
+                            <p>Match 3 candies!</p>
+                            <button class="pill-btn primary">Play</button>
+                        </li>
+                        <li class="game-hub-card disabled">
+                            <div class="card-icon">🔒</div>
+                            <h2>Coming Soon</h2>
+                            <p>Under development</p>
+                            <button class="pill-btn disabled" disabled>Locked</button>
+                        </li>
                     </ul>
                 </div>
                 <button class="nav-btn next-btn" onclick="nextGame()">&#10095;</button>
