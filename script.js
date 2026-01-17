@@ -1115,21 +1115,29 @@ const PennyCrush = {
 
     calculateTileSize: function () {
         // Dynamic sizing based on viewport
-        // Considerations: Header height (~100px), controls (~100px), padding
-        const availableWidth = window.innerWidth * 0.95; // 95% width
-        const availableHeight = window.innerHeight * 0.7; // 70% height (leave room for header/controls)
+        // More conservative sizing for mobile to ensure everything fits
+        const isMobile = window.innerWidth <= 768;
+
+        // Leave more room on mobile for header, controls, safe areas
+        const widthRatio = isMobile ? 0.9 : 0.95;
+        const heightRatio = isMobile ? 0.55 : 0.65; // Reduced for mobile
+
+        const availableWidth = window.innerWidth * widthRatio;
+        const availableHeight = window.innerHeight * heightRatio;
 
         const maxTileWidth = Math.floor(availableWidth / this.gridSize);
         const maxTileHeight = Math.floor(availableHeight / this.gridSize);
 
-        let size = Math.min(maxTileWidth, maxTileHeight, 55); // Max 55px
-        if (size < 15) size = 15; // Min size
+        // Smaller max tile size on mobile
+        const maxTileSize = isMobile ? 35 : 50;
+        let size = Math.min(maxTileWidth, maxTileHeight, maxTileSize);
+        if (size < 12) size = 12; // Min size
 
         // Update CSS variable
         document.documentElement.style.setProperty('--tile-size', `${size}px`);
         document.documentElement.style.setProperty('--grid-size', this.gridSize);
 
-        // Update grid columns style directly if needed (or rely on CSS var if used in repeat)
+        // Update grid columns style directly
         const gridEl = document.getElementById('pc-grid');
         if (gridEl) {
             gridEl.style.gridTemplateColumns = `repeat(${this.gridSize}, 1fr)`;
@@ -1486,15 +1494,14 @@ const PennyCrush = {
         const toClear = new Set();
 
         bombs.forEach(b => {
-            toClear.add(`${b.r},${b.c}`);
-            // Neighbors
-            [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(offset => {
-                const nr = b.r + offset[0];
-                const nc = b.c + offset[1];
-                if (nr >= 0 && nr < this.gridSize && nc >= 0 && nc < this.gridSize) {
-                    toClear.add(`${nr},${nc}`);
-                }
-            });
+            // Clear entire row
+            for (let c = 0; c < this.gridSize; c++) {
+                toClear.add(`${b.r},${c}`);
+            }
+            // Clear entire column
+            for (let r = 0; r < this.gridSize; r++) {
+                toClear.add(`${r},${b.c}`);
+            }
         });
 
         // Visualize

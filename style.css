@@ -542,14 +542,45 @@ h1 {
     }
 
     /* Penny Crush Mobile */
+    #app-penny-crush {
+        padding: 5px 0;
+    }
+
+    .penny-center-wrapper {
+        padding: 5px;
+    }
+
+    .penny-container {
+        padding: 10px;
+        min-width: unset;
+        width: 100%;
+    }
+
     .penny-header {
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .penny-header h1 {
+        font-size: 1.5rem;
+    }
+
+    .score-board {
+        font-size: 1.1rem;
+        padding: 6px 12px;
+    }
+
+    .pc-grid {
+        padding: 6px;
+        gap: 2px;
+        margin-bottom: 10px;
     }
 
     .pc-controls {
         flex-direction: column;
         width: 100%;
+        gap: 8px;
     }
 
     #pc-menu {
@@ -574,6 +605,31 @@ h1 {
     .board-frame {
         padding: 5px;
         margin-bottom: 15px;
+    }
+
+    /* Penny Crush iPhone Small Screen */
+    .penny-header h1 {
+        font-size: 1.3rem;
+    }
+
+    .score-board {
+        font-size: 1rem;
+        padding: 5px 10px;
+    }
+
+    .pc-grid {
+        padding: 4px;
+        gap: 1px;
+        border-radius: 8px;
+    }
+
+    .penny-container {
+        padding: 8px;
+    }
+
+    .pc-controls .pill-btn {
+        padding: 10px 15px;
+        font-size: 0.85rem;
     }
 }
 
@@ -627,31 +683,34 @@ h1 {
 /* Penny Crush Styles */
 #app-penny-crush {
     width: 100%;
-    height: 100vh;
+    min-height: 100vh;
+    min-height: 100dvh;
+    /* Dynamic viewport height for mobile */
     display: flex;
     justify-content: center;
-    align-items: center;
-    overflow: hidden;
-    /* Manage scroll internally if needed */
+    align-items: flex-start;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 10px 0;
 }
 
 .penny-center-wrapper {
     width: 100%;
-    max-height: 100%;
     display: flex;
     justify-content: center;
-    padding: 20px;
-    overflow-y: auto;
-    /* Allow vertical scroll if board is huge on small screen */
+    padding: 10px;
+    box-sizing: border-box;
 }
 
 .penny-container {
-    max-width: fit-content;
-    /* Allow growing for board */
-    min-width: 320px;
+    max-width: 100%;
+    width: fit-content;
+    min-width: 300px;
     display: flex;
     flex-direction: column;
     align-items: center;
+    padding: 15px;
+    box-sizing: border-box;
 }
 
 .penny-header {
