@@ -115,10 +115,9 @@ function selectMode(selectedMode) {
 }
 
 function backToLanding() {
-    // stopHeartbeat removed
+    // function backToLanding() clean up
     if (mode === 'online') {
-        leaveRoom(); // Helper to clean up if we were in a room
-        // stopLobbyListeners removed
+        leaveRoom();
     }
     showView('landing');
 }
@@ -548,7 +547,6 @@ function showApp(appName) {
         // Let's ensure we are clean.
         if (mode === 'online') {
             leaveRoom();
-            // stopLobbyListeners removed
         }
     } else if (appName === 'gomoku') {
         document.getElementById('app-gomoku').classList.remove('hidden');
