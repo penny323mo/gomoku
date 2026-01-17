@@ -1137,47 +1137,33 @@ const PennyCrush = {
     },
 
     calculateTileSize: function () {
-        // Dynamic sizing based on viewport
-        const screenWidth = window.innerWidth;
+        // Dynamic sizing based on container width (not viewport)
+        const container = document.querySelector('.penny-container');
+        const gridEl = document.getElementById('pc-grid');
+
+        // Get available width from container or fallback to viewport
+        const containerWidth = container ? container.clientWidth - 40 : window.innerWidth * 0.9;
         const screenHeight = window.innerHeight;
-        const isMobile = screenWidth <= 480;
-        const isTablet = screenWidth > 480 && screenWidth <= 1024;
+        const isMobile = window.innerWidth <= 480;
 
-        // Calculate available space (92% of screen width max)
-        const maxGridWidth = screenWidth * 0.92;
-        const maxGridHeight = screenHeight * 0.65; // Leave room for header/controls
+        // Gap and padding
+        const gapSize = isMobile ? 2 : 3;
+        const gridPadding = isMobile ? 12 : 16;
 
-        // Calculate tile size based on grid size and available space
-        // Account for gaps (approximately 2-3px per gap)
-        const gapSize = isMobile ? 1 : (isTablet ? 2 : 3);
-        const totalGapWidth = (this.gridSize - 1) * gapSize;
-        const paddingSize = isMobile ? 8 : 16; // Grid padding
+        // Calculate tile size based on container width
+        const totalGaps = (this.gridSize - 1) * gapSize;
+        const availableWidth = containerWidth - gridPadding - totalGaps;
+        const tileFromWidth = Math.floor(availableWidth / this.gridSize);
 
-        const availableForTiles = maxGridWidth - totalGapWidth - paddingSize;
-        const tileFromWidth = Math.floor(availableForTiles / this.gridSize);
+        // Also check height constraint (50-60% of screen height for grid)
+        const maxGridHeight = screenHeight * (isMobile ? 0.5 : 0.55);
+        const availableHeight = maxGridHeight - gridPadding - totalGaps;
+        const tileFromHeight = Math.floor(availableHeight / this.gridSize);
 
-        const availableHeightForTiles = maxGridHeight - totalGapWidth - paddingSize;
-        const tileFromHeight = Math.floor(availableHeightForTiles / this.gridSize);
+        // Use smaller of width/height, with min/max bounds
+        const maxTileSize = isMobile ? 35 : 45;
+        const minTileSize = isMobile ? 18 : 20;
 
-        // Use viewport-based limits on mobile (6-8vw)
-        let maxTileSize;
-        let minTileSize;
-
-        if (isMobile) {
-            // iPhone: 6vw to 8vw
-            maxTileSize = Math.floor(screenWidth * 0.075); // ~7.5vw
-            minTileSize = Math.floor(screenWidth * 0.05);  // 5vw minimum
-        } else if (isTablet) {
-            // iPad: slightly larger
-            maxTileSize = Math.floor(screenWidth * 0.06); // 6vw
-            minTileSize = 20;
-        } else {
-            // Desktop: fixed pixel sizes
-            maxTileSize = 45;
-            minTileSize = 15;
-        }
-
-        // Choose smallest of width-based, height-based, and max size
         let size = Math.min(tileFromWidth, tileFromHeight, maxTileSize);
         if (size < minTileSize) size = minTileSize;
 
@@ -1185,11 +1171,11 @@ const PennyCrush = {
         document.documentElement.style.setProperty('--tile-size', `${size}px`);
         document.documentElement.style.setProperty('--grid-size', this.gridSize);
 
-        // Update grid columns style directly with fixed tile sizes
-        const gridEl = document.getElementById('pc-grid');
+        // Update grid columns with fixed tile sizes
         if (gridEl) {
             gridEl.style.gridTemplateColumns = `repeat(${this.gridSize}, ${size}px)`;
             gridEl.style.gap = `${gapSize}px`;
+            gridEl.style.padding = `${gridPadding / 2}px`;
         }
     },
     stop: function () {

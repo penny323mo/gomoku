@@ -715,32 +715,38 @@ h1 {
     width: 100%;
     min-height: 100vh;
     min-height: 100dvh;
-    /* Dynamic viewport height for mobile */
     display: flex;
     justify-content: center;
-    align-items: flex-start;
+    align-items: center;
+    /* Center vertically */
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 10px 0;
+    padding: 16px;
+    box-sizing: border-box;
 }
 
 .penny-center-wrapper {
     width: 100%;
+    max-width: 600px;
+    /* Max width for desktop */
     display: flex;
     justify-content: center;
-    padding: 10px;
+    padding: 0 16px;
     box-sizing: border-box;
 }
 
 .penny-container {
-    max-width: 92vw;
-    width: fit-content;
-    min-width: 280px;
+    width: 100%;
+    max-width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 12px;
+    padding: 20px;
     box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(10px);
 }
 
 .penny-header {
@@ -789,14 +795,13 @@ h1 {
 
 .pc-grid {
     display: grid;
-    gap: 3px;
+    gap: 2px;
     background: rgba(0, 0, 0, 0.3);
-    padding: 8px;
-    border-radius: 12px;
+    padding: 6px;
+    border-radius: 10px;
     margin: 0 auto 15px auto;
-    max-width: 92vw;
-    max-height: 70vh;
-    overflow: auto;
+    width: 100%;
+    max-width: 100%;
     box-sizing: border-box;
     /* Columns defined dynamically by JS */
 }
@@ -1205,8 +1210,24 @@ h1 {
     animation: tile-fall 0.4s ease-out;
 }
 
-/* Mobile Responsive Adjustments for New Elements */
+/* Mobile Responsive Adjustments */
 @media (max-width: 768px) {
+    #app-penny-crush {
+        align-items: center;
+        /* Ensure vertical centering */
+        padding: 10px;
+    }
+
+    .penny-container {
+        padding: 12px !important;
+        /* Reduce padding on mobile */
+        width: 100%;
+    }
+
+    .penny-center-wrapper {
+        padding: 0;
+        max-width: 100%;
+    }
 
     .pc-tools,
     .pc-actions {
@@ -1217,9 +1238,9 @@ h1 {
 
     .tool-btn {
         flex: 1;
-        min-width: 100px;
+        min-width: 80px;
         font-size: 0.85rem;
-        padding: 8px 12px;
+        padding: 8px 10px;
     }
 
     .combo-text {
