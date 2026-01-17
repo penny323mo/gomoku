@@ -541,9 +541,10 @@ h1 {
         max-width: 300px;
     }
 
-    /* Penny Crush Mobile */
+    /* Penny Crush Mobile (< 768px) */
     #app-penny-crush {
         padding: 5px 0;
+        align-items: flex-start;
     }
 
     .penny-center-wrapper {
@@ -551,36 +552,43 @@ h1 {
     }
 
     .penny-container {
-        padding: 10px;
+        padding: 8px;
         min-width: unset;
-        width: 100%;
+        width: 96%;
+        max-width: 96vw;
     }
 
     .penny-header {
         flex-direction: column;
-        gap: 8px;
-        margin-bottom: 10px;
+        gap: 6px;
+        margin-bottom: 8px;
     }
 
     .penny-header h1 {
-        font-size: 1.5rem;
+        font-size: 1.4rem;
     }
 
     .score-board {
-        font-size: 1.1rem;
-        padding: 6px 12px;
+        font-size: 1rem;
+        padding: 5px 10px;
     }
 
     .pc-grid {
-        padding: 6px;
-        gap: 2px;
-        margin-bottom: 10px;
+        padding: 4px;
+        gap: 1px;
+        margin-bottom: 8px;
+        max-height: 60vh;
     }
 
     .pc-controls {
         flex-direction: column;
         width: 100%;
-        gap: 8px;
+        gap: 6px;
+    }
+
+    .pc-controls .pill-btn {
+        padding: 10px 16px;
+        font-size: 0.9rem;
     }
 
     #pc-menu {
@@ -607,29 +615,50 @@ h1 {
         margin-bottom: 15px;
     }
 
-    /* Penny Crush iPhone Small Screen */
+    /* Penny Crush iPhone (<=480px) */
+    .penny-container {
+        padding: 5px;
+        width: 98%;
+    }
+
+    .penny-header {
+        gap: 4px;
+        margin-bottom: 6px;
+    }
+
     .penny-header h1 {
-        font-size: 1.3rem;
+        font-size: 1.2rem;
     }
 
     .score-board {
-        font-size: 1rem;
-        padding: 5px 10px;
+        font-size: 0.9rem;
+        padding: 4px 8px;
     }
 
     .pc-grid {
-        padding: 4px;
+        padding: 3px;
         gap: 1px;
-        border-radius: 8px;
+        border-radius: 6px;
+        max-height: 55vh;
     }
 
-    .penny-container {
-        padding: 8px;
+    /* Force smaller tiles on iPhone using calc */
+    .pc-tile {
+        width: min(var(--tile-size, 28px), 7vw);
+        height: min(var(--tile-size, 28px), 7vw);
+    }
+
+    .pc-controls {
+        gap: 5px;
     }
 
     .pc-controls .pill-btn {
-        padding: 10px 15px;
-        font-size: 0.85rem;
+        padding: 8px 12px;
+        font-size: 0.8rem;
+    }
+
+    #pc-menu .pill-btn {
+        padding: 12px 20px;
     }
 }
 
@@ -703,13 +732,13 @@ h1 {
 }
 
 .penny-container {
-    max-width: 100%;
+    max-width: 92vw;
     width: fit-content;
-    min-width: 300px;
+    min-width: 280px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 15px;
+    padding: 12px;
     box-sizing: border-box;
 }
 
@@ -758,12 +787,15 @@ h1 {
 
 .pc-grid {
     display: grid;
-    gap: 4px;
-    /* Tighter gap for large boards */
+    gap: 3px;
     background: rgba(0, 0, 0, 0.3);
-    padding: 10px;
+    padding: 8px;
     border-radius: 12px;
-    margin: 0 auto 20px auto;
+    margin: 0 auto 15px auto;
+    max-width: 92vw;
+    max-height: 70vh;
+    overflow: auto;
+    box-sizing: border-box;
     /* Columns defined dynamically by JS */
 }
 

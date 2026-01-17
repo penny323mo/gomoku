@@ -1115,32 +1115,58 @@ const PennyCrush = {
 
     calculateTileSize: function () {
         // Dynamic sizing based on viewport
-        // More conservative sizing for mobile to ensure everything fits
-        const isMobile = window.innerWidth <= 768;
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+        const isMobile = screenWidth <= 480;
+        const isTablet = screenWidth > 480 && screenWidth <= 1024;
 
-        // Leave more room on mobile for header, controls, safe areas
-        const widthRatio = isMobile ? 0.9 : 0.95;
-        const heightRatio = isMobile ? 0.55 : 0.65; // Reduced for mobile
+        // Calculate available space (92% of screen width max)
+        const maxGridWidth = screenWidth * 0.92;
+        const maxGridHeight = screenHeight * 0.65; // Leave room for header/controls
 
-        const availableWidth = window.innerWidth * widthRatio;
-        const availableHeight = window.innerHeight * heightRatio;
+        // Calculate tile size based on grid size and available space
+        // Account for gaps (approximately 2-3px per gap)
+        const gapSize = isMobile ? 1 : (isTablet ? 2 : 3);
+        const totalGapWidth = (this.gridSize - 1) * gapSize;
+        const paddingSize = isMobile ? 8 : 16; // Grid padding
 
-        const maxTileWidth = Math.floor(availableWidth / this.gridSize);
-        const maxTileHeight = Math.floor(availableHeight / this.gridSize);
+        const availableForTiles = maxGridWidth - totalGapWidth - paddingSize;
+        const tileFromWidth = Math.floor(availableForTiles / this.gridSize);
 
-        // Smaller max tile size on mobile
-        const maxTileSize = isMobile ? 35 : 50;
-        let size = Math.min(maxTileWidth, maxTileHeight, maxTileSize);
-        if (size < 12) size = 12; // Min size
+        const availableHeightForTiles = maxGridHeight - totalGapWidth - paddingSize;
+        const tileFromHeight = Math.floor(availableHeightForTiles / this.gridSize);
+
+        // Use viewport-based limits on mobile (6-8vw)
+        let maxTileSize;
+        let minTileSize;
+
+        if (isMobile) {
+            // iPhone: 6vw to 8vw
+            maxTileSize = Math.floor(screenWidth * 0.075); // ~7.5vw
+            minTileSize = Math.floor(screenWidth * 0.05);  // 5vw minimum
+        } else if (isTablet) {
+            // iPad: slightly larger
+            maxTileSize = Math.floor(screenWidth * 0.06); // 6vw
+            minTileSize = 20;
+        } else {
+            // Desktop: fixed pixel sizes
+            maxTileSize = 45;
+            minTileSize = 15;
+        }
+
+        // Choose smallest of width-based, height-based, and max size
+        let size = Math.min(tileFromWidth, tileFromHeight, maxTileSize);
+        if (size < minTileSize) size = minTileSize;
 
         // Update CSS variable
         document.documentElement.style.setProperty('--tile-size', `${size}px`);
         document.documentElement.style.setProperty('--grid-size', this.gridSize);
 
-        // Update grid columns style directly
+        // Update grid columns style directly with fixed tile sizes
         const gridEl = document.getElementById('pc-grid');
         if (gridEl) {
-            gridEl.style.gridTemplateColumns = `repeat(${this.gridSize}, 1fr)`;
+            gridEl.style.gridTemplateColumns = `repeat(${this.gridSize}, ${size}px)`;
+            gridEl.style.gap = `${gapSize}px`;
         }
     },
     stop: function () {
