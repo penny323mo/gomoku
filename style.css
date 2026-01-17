@@ -318,6 +318,14 @@ h1 {
     background: radial-gradient(circle at 35% 35%, #fff, #ddd);
 }
 
+.controls-card {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
 /* Utility */
 .hidden {
     display: none !important;
