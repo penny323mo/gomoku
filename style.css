@@ -1216,6 +1216,61 @@ h1 {
     }
 }
 
+/* Base Tile Shape - Updated for Images */
+.candy-shape {
+    width: 90%;
+    height: 90%;
+    border-radius: 15%;
+    /* Squircle shape */
+    transition: transform 0.2s, box-shadow 0.2s;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    /* Remove old gradient/emoji setup */
+    display: block;
+}
+
+/* Character Images Mappings */
+.pc-char-1 .candy-shape {
+    background-image: url('assets/characters/1.jpg');
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.pc-char-2 .candy-shape {
+    background-image: url('assets/characters/2.jpg');
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.pc-char-3 .candy-shape {
+    background-image: url('assets/characters/3.jpg');
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.pc-char-4 .candy-shape {
+    background-image: url('assets/characters/4.jpg');
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.pc-char-5 .candy-shape {
+    background-image: url('assets/characters/5.jpg');
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Special Bomb/Rainbow Setup */
+.pc-bomb .candy-shape {
+    background: radial-gradient(circle at 30% 30%, #444, #000);
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pc-bomb .candy-shape::before {
+    content: '💣';
+    font-size: 70%;
+}
+
 /* Row Bomb Tile */
 .pc-tile.pc-row-bomb .candy-shape {
     background: linear-gradient(90deg, #ff6b6b 0%, #ffd93d 50%, #ff6b6b 100%);

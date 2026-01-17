@@ -1073,7 +1073,8 @@ const PennyCrush = {
     score: 0,
     selectedTile: null, // {r, c}
     isProcessing: false,
-    colors: ['pc-red', 'pc-orange', 'pc-yellow', 'pc-green', 'pc-blue', 'pc-purple'],
+    // Updated to use 5 character types mapped to images
+    colors: ['pc-char-1', 'pc-char-2', 'pc-char-3', 'pc-char-4', 'pc-char-5'],
 
     // Special tile types
     specialTiles: ['pc-bomb', 'pc-row-bomb', 'pc-col-bomb', 'pc-rainbow'],
