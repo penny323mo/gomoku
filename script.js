@@ -1078,6 +1078,12 @@ const PennyCrush = {
     // Special tile types
     specialTiles: ['pc-bomb', 'pc-row-bomb', 'pc-col-bomb', 'pc-rainbow'],
 
+    // Safety caps for special spawns per move
+    MAX_BOMBS_PER_TURN: 2,
+    MAX_RAINBOWS_PER_TURN: 1,
+    bombsSpawnedThisTurn: 0,
+    rainbowsSpawnedThisTurn: 0,
+
     // Combo system
     comboCount: 0,
 
@@ -1528,6 +1534,10 @@ const PennyCrush = {
         this.selectedTile = null;
         this.comboCount = 0; // Reset combo at start of turn
 
+        // Reset special spawn counters for this move
+        this.bombsSpawnedThisTurn = 0;
+        this.rainbowsSpawnedThisTurn = 0;
+
         // Swap data
         const temp = this.grid[r1][c1];
         this.grid[r1][c1] = this.grid[r2][c2];
@@ -1539,44 +1549,45 @@ const PennyCrush = {
         const tile1 = this.grid[r1][c1];
         const tile2 = this.grid[r2][c2];
 
-        // Cross Bomb (existing)
+        // Cross Bomb (existing) - NO special spawn from bomb cascades
         if (tile1 === 'pc-bomb' || tile2 === 'pc-bomb') {
             await new Promise(r => setTimeout(r, 200));
             this.turnClearedCount = 0;
             const bombsToDetonate = [];
             if (tile1 === 'pc-bomb') bombsToDetonate.push({ r: r1, c: c1 });
             if (tile2 === 'pc-bomb') bombsToDetonate.push({ r: r2, c: c2 });
-            await this.detonateBombs(bombsToDetonate);
+            await this.detonateBombs(bombsToDetonate, false); // allowSpecialSpawn = false
             return;
         }
 
-        // Row Bomb
+        // Row Bomb - NO special spawn
         if (tile1 === 'pc-row-bomb' || tile2 === 'pc-row-bomb') {
             await new Promise(r => setTimeout(r, 200));
             this.turnClearedCount = 0;
-            if (tile1 === 'pc-row-bomb') await this.detonateRowBomb(r1, c1);
-            if (tile2 === 'pc-row-bomb') await this.detonateRowBomb(r2, c2);
+            if (tile1 === 'pc-row-bomb') await this.detonateRowBomb(r1, c1, false);
+            if (tile2 === 'pc-row-bomb') await this.detonateRowBomb(r2, c2, false);
             return;
         }
 
-        // Column Bomb
+        // Column Bomb - NO special spawn
         if (tile1 === 'pc-col-bomb' || tile2 === 'pc-col-bomb') {
             await new Promise(r => setTimeout(r, 200));
             this.turnClearedCount = 0;
-            if (tile1 === 'pc-col-bomb') await this.detonateColBomb(r1, c1);
-            if (tile2 === 'pc-col-bomb') await this.detonateColBomb(r2, c2);
+            if (tile1 === 'pc-col-bomb') await this.detonateColBomb(r1, c1, false);
+            if (tile2 === 'pc-col-bomb') await this.detonateColBomb(r2, c2, false);
             return;
         }
 
-        // Normal Match Check
+        // Normal Match Check - FIRST match allows special spawn
         const matches = this.findMatches();
 
         if (matches.length > 0 || forceSwap) {
             this.turnClearedCount = 0;
             if (matches.length > 0) {
-                await this.processMatches(matches);
+                // Only the first processMatches allows special spawning
+                await this.processMatches(matches, true); // allowSpecialSpawn = true
             } else {
-                // Forced swap with no matches - just apply gravity and finalize
+                // Forced swap with no matches
                 await this.applyGravity();
                 this.finalizeTurn();
             }
@@ -1599,7 +1610,7 @@ const PennyCrush = {
         }
     },
 
-    detonateBombs: async function (bombs) {
+    detonateBombs: async function (bombs, allowSpecialSpawn = false) {
         // Create a Set of tiles to clear
         const toClear = new Set();
 
@@ -1618,13 +1629,13 @@ const PennyCrush = {
         toClear.forEach(str => {
             const [r, c] = str.split(',').map(Number);
             const tile = document.querySelector(`.pc-tile[data-r="${r}"][data-c="${c}"]`);
-            if (tile) tile.classList.add('pc-pop'); // Reuse pop for now
+            if (tile) tile.classList.add('pc-pop');
         });
 
         await new Promise(r => setTimeout(r, 300));
 
-        // Score
-        this.updateScore(toClear.size * 20); // Bombs worth more?
+        // Score (no combo multiplier for bomb explosions)
+        this.updateScore(toClear.size * 20);
         this.turnClearedCount += toClear.size;
 
         // Clear Data
@@ -1636,23 +1647,49 @@ const PennyCrush = {
         // Gravity
         await this.applyGravity();
 
-        // Resume match checking
+        // Resume match checking - NO special spawns from bomb cascades
         const newMatches = this.findMatches();
         if (newMatches.length > 0) {
-            await this.processMatches(newMatches);
+            await this.processMatches(newMatches, false); // Never spawn from bomb cascade
         } else {
-            // Settle
             this.finalizeTurn();
         }
     },
 
-    processMatches: async function (matches) {
-        // Increment combo for chain reactions
-        this.comboCount++;
+    processMatches: async function (matches, allowSpecialSpawn = false) {
+        // Only increment combo for player-initiated matches
+        if (allowSpecialSpawn) {
+            this.comboCount++;
+        }
 
-        // Check for special tile spawn before clearing
-        const specialType = this.checkSpecialTileSpawn(matches);
-        const spawnPos = specialType ? matches[Math.floor(Math.random() * matches.length)] : null;
+        // Check for special tile spawn ONLY if allowed and within caps
+        let specialType = null;
+        let spawnPos = null;
+
+        if (allowSpecialSpawn) {
+            specialType = this.checkSpecialTileSpawn(matches);
+
+            // Apply safety caps
+            if (specialType === 'pc-rainbow') {
+                if (this.rainbowsSpawnedThisTurn >= this.MAX_RAINBOWS_PER_TURN) {
+                    specialType = null; // Already spawned max rainbows
+                }
+            } else if (specialType === 'pc-row-bomb' || specialType === 'pc-col-bomb') {
+                if (this.bombsSpawnedThisTurn >= this.MAX_BOMBS_PER_TURN) {
+                    specialType = null; // Already spawned max bombs
+                }
+            }
+
+            if (specialType) {
+                spawnPos = matches[Math.floor(Math.random() * matches.length)];
+                // Track spawns
+                if (specialType === 'pc-rainbow') {
+                    this.rainbowsSpawnedThisTurn++;
+                } else if (specialType === 'pc-row-bomb' || specialType === 'pc-col-bomb') {
+                    this.bombsSpawnedThisTurn++;
+                }
+            }
+        }
 
         // Highlight Matches
         matches.forEach(m => {
@@ -1662,8 +1699,8 @@ const PennyCrush = {
 
         await new Promise(r => setTimeout(r, 300));
 
-        // Calculate score with combo multiplier
-        const multiplier = this.getComboMultiplier();
+        // Calculate score (combo multiplier only applies to player-initiated)
+        const multiplier = allowSpecialSpawn ? this.getComboMultiplier() : 1;
         const points = matches.length * 10 * multiplier;
         this.updateScore(points);
         this.turnClearedCount += matches.length;
@@ -1673,8 +1710,8 @@ const PennyCrush = {
             this.showScorePop(matches[0].r, matches[0].c, points);
         }
 
-        // Show combo text if multiplier > 1
-        if (multiplier > 1) {
+        // Show combo text only for player-initiated matches with multiplier > 1
+        if (allowSpecialSpawn && multiplier > 1) {
             this.showComboText(multiplier);
         }
 
@@ -1695,10 +1732,10 @@ const PennyCrush = {
         // Gravity
         await this.applyGravity();
 
-        // Check new matches
+        // Check new matches - CASCADE matches do NOT allow special spawns
         const newMatches = this.findMatches();
         if (newMatches.length > 0) {
-            await this.processMatches(newMatches);
+            await this.processMatches(newMatches, false); // Cascade = NO special spawn
         } else {
             // No more matches -> Turn End
             this.finalizeTurn();
@@ -1906,7 +1943,7 @@ const PennyCrush = {
     },
 
     // --- Row Bomb Detonation ---
-    detonateRowBomb: async function (r, c) {
+    detonateRowBomb: async function (r, c, allowSpecialSpawn = false) {
         const toClear = new Set();
 
         // Clear entire row
@@ -1914,11 +1951,11 @@ const PennyCrush = {
             toClear.add(`${r},${col}`);
         }
 
-        await this.clearTiles(toClear, 25);
+        await this.clearTiles(toClear, 25, false); // No special spawn from bombs
     },
 
     // --- Column Bomb Detonation ---
-    detonateColBomb: async function (r, c) {
+    detonateColBomb: async function (r, c, allowSpecialSpawn = false) {
         const toClear = new Set();
 
         // Clear entire column
@@ -1926,7 +1963,7 @@ const PennyCrush = {
             toClear.add(`${row},${c}`);
         }
 
-        await this.clearTiles(toClear, 25);
+        await this.clearTiles(toClear, 25, false); // No special spawn from bombs
     },
 
     // --- Rainbow Ball Effect ---
@@ -1945,11 +1982,11 @@ const PennyCrush = {
         // Also clear the rainbow tile itself
         toClear.add(`${r},${c}`);
 
-        await this.clearTiles(toClear, 30);
+        await this.clearTiles(toClear, 30, false); // No special spawn from rainbow
     },
 
     // --- Generic Tile Clear with Animation ---
-    clearTiles: async function (tileSet, pointsPerTile) {
+    clearTiles: async function (tileSet, pointsPerTile, allowSpecialSpawn = false) {
         // Visualize
         tileSet.forEach(str => {
             const [r, c] = str.split(',').map(Number);
@@ -1959,9 +1996,8 @@ const PennyCrush = {
 
         await new Promise(r => setTimeout(r, 300));
 
-        // Score with combo
-        const multiplier = this.getComboMultiplier();
-        const points = tileSet.size * pointsPerTile * multiplier;
+        // Score (no combo multiplier for special explosions)
+        const points = tileSet.size * pointsPerTile;
         this.updateScore(points);
         this.turnClearedCount += tileSet.size;
 
@@ -1980,10 +2016,10 @@ const PennyCrush = {
         // Gravity
         await this.applyGravity();
 
-        // Resume match checking
+        // Resume match checking - NO special spawns from explosions
         const newMatches = this.findMatches();
         if (newMatches.length > 0) {
-            await this.processMatches(newMatches);
+            await this.processMatches(newMatches, false); // Never spawn from explosion cascade
         } else {
             this.finalizeTurn();
         }
