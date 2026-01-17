@@ -2161,44 +2161,74 @@ function renderCarousel() {
 
 
 function updateCarousel() {
-    const track = document.getElementById('game-carousel');
-    if (!track) return;
-
-    // Get fresh dimensions
-    const container = document.querySelector('.carousel-container');
-    const containerWidth = container ? container.offsetWidth : window.innerWidth;
-
-    // Matched with CSS masking width and large gap
-    const cardWidth = 280;
-    const gap = 100; // CSS gap
-
-    // Proper centering math:
-    // We want the active card's Center to be at containerWidth / 2.
-    // Active card's left position in flow = index * (cardWidth + gap).
-    // Active card's center = (index * (cardWidth + gap)) + (cardWidth / 2).
-    // Desired translation = (containerWidth / 2) - ActiveCardCenter.
-
-    const activeCardCenter = (currentSlide * (cardWidth + gap)) + (cardWidth / 2);
-    const desiredCenter = containerWidth / 2;
-    const moveAmount = activeCardCenter - desiredCenter;
-
-    track.style.transform = `translateX(-${moveAmount}px)`;
-
-    // Update Active Card Style
+    // This is called by Prev/Next buttons
     const cards = document.querySelectorAll('.game-hub-card');
+
+    // Use scrollIntoView which is robust with scroll-snap and padding
+    if (cards[currentSlide]) {
+        cards[currentSlide].scrollIntoView({
+            behavior: 'smooth',
+            inline: 'center',
+            block: 'nearest'
+        });
+    }
+
+    // Update button states
+    updateButtonStates();
+
+    // Force active state update immediately active class
+    highlightCard(currentSlide);
+}
+
+function updateActiveStateOnScroll() {
+    const container = document.querySelector('.carousel-track-container');
+    if (!container) return;
+
+    // Find value closest to center of container
+    const containerRect = container.getBoundingClientRect();
+    const containerCenter = containerRect.left + containerRect.width / 2;
+
+    const cards = document.querySelectorAll('.game-hub-card');
+    let closestIndex = -1;
+    let minDistance = Infinity;
+
     cards.forEach((card, index) => {
-        if (index === currentSlide) {
-            card.classList.add('active-card');
-            card.style.opacity = '1';
-            card.style.transform = 'scale(1.02)';
-        } else {
-            card.classList.remove('active-card');
-            card.style.opacity = '0'; // Hide masked neighbors
-            card.style.transform = 'scale(0.9)';
+        const cardRect = card.getBoundingClientRect();
+        const cardCenter = cardRect.left + cardRect.width / 2;
+        const dist = Math.abs(containerCenter - cardCenter);
+
+        if (dist < minDistance) {
+            minDistance = dist;
+            closestIndex = index;
         }
     });
 
-    // Manage button states
+    // Threshold can be fairly generous, e.g. half a card width
+    if (closestIndex >= 0 && minDistance < 150) {
+        if (closestIndex !== currentSlide) {
+            currentSlide = closestIndex; // Sync currentSlide state
+            updateButtonStates();
+        }
+        highlightCard(closestIndex);
+    }
+}
+
+function highlightCard(index) {
+    const cards = document.querySelectorAll('.game-hub-card');
+    cards.forEach((card, i) => {
+        if (i === index) {
+            card.classList.add('active-card');
+            card.style.opacity = '1';
+            card.style.transform = 'scale(1.05)';
+        } else {
+            card.classList.remove('active-card');
+            card.style.opacity = '0.5';
+            card.style.transform = 'scale(0.9)';
+        }
+    });
+}
+
+function updateButtonStates() {
     const prevBtn = document.querySelector('.prev-btn');
     const nextBtn = document.querySelector('.next-btn');
     const maxSlide = games.length - 1;
@@ -2231,11 +2261,26 @@ function prevGame() {
 
 // Initialize Carousel on Load
 window.addEventListener('load', () => {
+    // Force initial scroll position adjustment for style
     renderCarousel();
-    window.addEventListener('resize', updateCarousel);
+    const container = document.querySelector('.carousel-track-container');
+    if (container) {
+        // Debounced active state update
+        let scrollTimeout;
+        container.addEventListener('scroll', () => {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                updateActiveStateOnScroll();
+            }, 50); // Debounce 50ms
+        }, { passive: true });
+    }
+
+    // Also trigger update once to set initial active class
+    setTimeout(updateActiveStateOnScroll, 100);
 });
 
 // Also try immediately incase load already happened
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
     renderCarousel();
+    setTimeout(updateActiveStateOnScroll, 100);
 }
