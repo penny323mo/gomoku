@@ -31,7 +31,9 @@ let difficulty = 'hard';
 let mode = null; // 'ai' or 'online', initially null until selected
 let roomId = null;
 let playerRole = null; // 'black', 'white', 'spectator', or null
+
 let roomUnsubscribe = null;
+let lobbyUnsubscribes = [];
 
 // --- Client ID Logic ---
 let clientId = localStorage.getItem('gomoku_clientId');
@@ -93,6 +95,11 @@ function selectMode(selectedMode) {
 }
 
 function backToLanding() {
+    stopHeartbeat();
+    if (mode === 'online') {
+        leaveRoom(); // Helper to clean up if we were in a room
+        stopLobbyListeners();
+    }
     showView('landing');
 }
 
@@ -558,6 +565,9 @@ function joinRoom(selectedRoomId) {
 
     roomId = selectedRoomId;
 
+    // Stop lobby count listeners to save quota
+    stopLobbyListeners();
+
     // Switch View
     showView('online-room');
     document.getElementById('current-room-id').textContent = roomId;
@@ -860,9 +870,17 @@ function sendHeartbeat() {
         console.warn("Heartbeat failed:", err);
     });
 }
+function stopLobbyListeners() {
+    lobbyUnsubscribes.forEach(unsubscribe => unsubscribe());
+    lobbyUnsubscribes = [];
+}
+
 function listenToRoomCounts() {
+    // Prevent duplicate listeners
+    if (lobbyUnsubscribes.length > 0) return;
+
     ['room1', 'room2', 'room3'].forEach(rid => {
-        db.collection('rooms').doc(rid).onSnapshot(doc => {
+        const unsubscribe = db.collection('rooms').doc(rid).onSnapshot(doc => {
             const countSpan = document.getElementById(`${rid}-count`);
             if (!doc.exists) {
                 if (countSpan) countSpan.textContent = '(0/2)';
@@ -894,9 +912,6 @@ function listenToRoomCounts() {
                         needUpdate = true;
                     } else if (!blackTs) {
                         // If no heartbeat found, give a grace period of 5 seconds (maybe they just joined)
-                        // Actually, transaction sets it. If it's missing, it's a desync.
-                        // But let's be safe: don't auto-kick immediately if data.heartbeats is present but key is missing
-                        // UNLESS we are sure. For now, strict: if map exists but key doesn't, kick.
                         updates['players.blackId'] = null;
                         needUpdate = true;
                     } else {
@@ -975,11 +990,9 @@ function listenToRoomCounts() {
                 countSpan.textContent = `(${pCount}/2)`;
             }
         });
+        lobbyUnsubscribes.push(unsubscribe);
     });
 }
-
-// Start listening for room counts immediately
-listenToRoomCounts();
 
 // Graceful exit
 window.addEventListener('beforeunload', () => {
