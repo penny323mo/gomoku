@@ -601,23 +601,30 @@ function joinRoom(selectedRoomId) {
         setMode('online'); // Reset UI
     });
 }
-
 function leaveRoom() {
-    stopHeartbeat(); // Stop heartbeat loop
+    stopHeartbeat(); // 停止 heartbeat loop
     if (!roomId) return;
 
     const roomRef = db.collection('rooms').doc(roomId);
 
-    // Attempt to remove self from room
+    // 準備一次過要 update 嘅欄位
+    const updates = {};
+
     if (playerRole === 'black') {
-        roomRef.update({ 'players.blackId': null });
+        updates['players.blackId'] = null;
     } else if (playerRole === 'white') {
-        roomRef.update({ 'players.whiteId': null });
+        updates['players.whiteId'] = null;
     } else {
-        roomRef.update({
-            spectators: firebase.firestore.FieldValue.arrayRemove(clientId)
-        });
+        updates['spectators'] = firebase.firestore.FieldValue.arrayRemove(clientId);
     }
+
+    // 🔑 重點：離開房間時順便刪走自己嘅 heartbeat
+    updates[`heartbeats.${clientId}`] = firebase.firestore.FieldValue.delete();
+    updates.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+
+    roomRef.update(updates).catch(err => {
+        console.error('leaveRoom update failed:', err);
+    });
 
     if (roomUnsubscribe) {
         roomUnsubscribe();
@@ -755,107 +762,111 @@ function sendHeartbeat() {
         console.warn("Heartbeat failed:", err);
     });
 }
-
 function listenToRoomCounts() {
     ['room1', 'room2', 'room3'].forEach(rid => {
         db.collection('rooms').doc(rid).onSnapshot(doc => {
             const countSpan = document.getElementById(`${rid}-count`);
             if (!doc.exists) {
-                if (countSpan) countSpan.textContent = `(0/2)`;
+                if (countSpan) countSpan.textContent = '(0/2)';
                 return;
             }
 
             const data = doc.data();
-
-            // --- Cleanup inactive players ---
-            // Only perform cleanup if we are "looking" at this room (snapshot active)
-            // To prevent all clients from writing simultaneously, maybe just let it happen (last write wins)
-            // Or only run if we are in this room? No, we want to clean 'other' rooms too so count is correct.
-            // But writing to all rooms from all clients is cost-heavy.
-            // Let's rely on the fact that these are fixed rooms.
-            // Simple approach: Check last active. If > 15 seconds, remove.
-
             const now = Date.now();
-            const MAX_INACTIVE_TIME = 15000; // 15 seconds
+            const MAX_INACTIVE_TIME = 15000; // 15 秒 timeout
 
             let pCount = 0;
             const updates = {};
             let needUpdate = false;
 
-            if (data.heartbeats) {
-                // Check Black
-                if (data.players && data.players.blackId) {
-                    const blackTs = data.heartbeats[data.players.blackId];
-                    if (blackTs) {
-                        // Check if valid timestamp (it might be null momentarily)
-                        // Firestore Timestamp to millis: blackTs.toMillis()
-                        if (blackTs.toMillis && (now - blackTs.toMillis() > MAX_INACTIVE_TIME)) {
-                            // Timeout Black
-                            updates['players.blackId'] = null;
-                            updates[`heartbeats.${data.players.blackId}`] = firebase.firestore.FieldValue.delete();
-                            needUpdate = true;
-                        } else {
-                            pCount++;
-                        }
+            let blackActive = false;
+            let whiteActive = false;
+            let activeSpectators = data.spectators || [];
+
+            if (data.players && data.heartbeats) {
+                // ---- Black 玩家 ----
+                if (data.players.blackId) {
+                    const blackId = data.players.blackId;
+                    const blackTs = data.heartbeats[blackId];
+
+                    if (blackTs && blackTs.toMillis && (now - blackTs.toMillis() > MAX_INACTIVE_TIME)) {
+                        // heartbeat 太舊 → 當佢斷線，清人＋清 heartbeat
+                        updates['players.blackId'] = null;
+                        updates[`heartbeats.${blackId}`] = firebase.firestore.FieldValue.delete();
+                        needUpdate = true;
+                    } else if (!blackTs) {
+                        // 有 player 冇 heartbeat → 當壞 session，直接清
+                        updates['players.blackId'] = null;
+                        needUpdate = true;
                     } else {
-                        // No heartbeat record but player is set? 
-                        // Maybe just joined? Give grace period? 
-                        // If it's been null for a while... assume stale if created long ago. 
-                        // For simplicity, if we have player ID but no heartbeat entry, we might want to clean it up 
-                        // UNLESS they just joined (race condition).
-                        // Let's assume joining sets heartbeat immediately.
-                        // If missing, count as active (optimistic) or ignore?
-                        // Let's count as valid to be safe, but maybe 0 is better.
-                        // Actually, joinRoom sets heartbeat.
+                        blackActive = true;
                         pCount++;
                     }
                 }
 
-                // Check White
-                if (data.players && data.players.whiteId) {
-                    const whiteTs = data.heartbeats[data.players.whiteId];
-                    if (whiteTs) {
-                        if (whiteTs.toMillis && (now - whiteTs.toMillis() > MAX_INACTIVE_TIME)) {
-                            // Timeout White
-                            updates['players.whiteId'] = null;
-                            updates[`heartbeats.${data.players.whiteId}`] = firebase.firestore.FieldValue.delete();
-                            needUpdate = true;
-                        } else {
-                            pCount++;
-                        }
+                // ---- White 玩家 ----
+                if (data.players.whiteId) {
+                    const whiteId = data.players.whiteId;
+                    const whiteTs = data.heartbeats[whiteId];
+
+                    if (whiteTs && whiteTs.toMillis && (now - whiteTs.toMillis() > MAX_INACTIVE_TIME)) {
+                        updates['players.whiteId'] = null;
+                        updates[`heartbeats.${whiteId}`] = firebase.firestore.FieldValue.delete();
+                        needUpdate = true;
+                    } else if (!whiteTs) {
+                        updates['players.whiteId'] = null;
+                        needUpdate = true;
                     } else {
+                        whiteActive = true;
                         pCount++;
                     }
                 }
 
-                // Check Spectators
+                // ---- 觀戰者 ----
                 if (data.spectators && data.spectators.length > 0) {
-                    const activeSpectators = [];
-                    let specChanged = false;
+                    activeSpectators = [];
                     data.spectators.forEach(specId => {
                         const specTs = data.heartbeats[specId];
                         if (specTs && specTs.toMillis && (now - specTs.toMillis() <= MAX_INACTIVE_TIME)) {
-                            activeSpectators.push(specId);
+                            activeSpectators.push(specId); // 仲活躍
                         } else {
-                            // Time out spectator
+                            // timeout spectator，刪 heartbeat
                             updates[`heartbeats.${specId}`] = firebase.firestore.FieldValue.delete();
-                            specChanged = true;
                             needUpdate = true;
                         }
                     });
 
-                    if (specChanged) {
-                        updates['spectators'] = activeSpectators; // rewriting entire array safe here if we trust this snapshot
+                    if (activeSpectators.length !== data.spectators.length) {
+                        updates['spectators'] = activeSpectators;
+                        needUpdate = true;
                     }
                 }
             } else {
-                // No heartbeats map yet? Just count players
-                if (data.players && data.players.blackId) pCount++;
-                if (data.players && data.players.whiteId) pCount++;
+                // 冇 heartbeats map 嘅 fallback（基本上只係初始化時先會見到）
+                if (data.players && data.players.blackId) {
+                    blackActive = true;
+                    pCount++;
+                }
+                if (data.players && data.players.whiteId) {
+                    whiteActive = true;
+                    pCount++;
+                }
+            }
+
+            const totalPlayers = (blackActive ? 1 : 0) + (whiteActive ? 1 : 0);
+            const totalSpectators = activeSpectators.length;
+
+            // 🔁 如果房間完全冇人（冇玩家＋冇觀戰）→ 自動 reset 棋局
+            if (totalPlayers === 0 && totalSpectators === 0) {
+                updates.board = Array(15 * 15).fill(null); // 清棋盤
+                updates.currentPlayer = 'black';
+                updates.gameOver = false;
+                updates.heartbeats = {}; // 心跳 map 清空
+                updates.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+                needUpdate = true;
             }
 
             if (needUpdate) {
-                // Perform Cleanup
                 db.collection('rooms').doc(rid).update(updates).catch(console.error);
             }
 
