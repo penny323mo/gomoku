@@ -55,6 +55,11 @@ if (!localStorage.getItem('gomoku_clientId')) {
 // Ensure global clientId is set if not already
 if (!clientId) clientId = localStorage.getItem('gomoku_clientId');
 
+// EXPOSE GLOBALS EARLY (To prevent runtime crashes from blocking UI)
+window.showApp = showApp;
+window.backToLanding = backToLanding;
+window.showView = showView;
+
 // --- View Navigation ---
 function showView(viewName) {
     // Hide all main containers
