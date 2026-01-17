@@ -252,7 +252,10 @@ h1 {
 /* Scrollable Track Container */
 .carousel-track-container {
     width: 100%;
-    overflow-x: auto;
+    overflow: visible;
+    /* As requested to prevent hiding cards */
+    /* overflow-x: auto; */
+    /* Temporarily disabled per request */
     overflow-y: hidden;
     scroll-snap-type: x mandatory;
     scroll-behavior: smooth;

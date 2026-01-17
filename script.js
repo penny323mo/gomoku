@@ -1,7 +1,17 @@
+// Initialize Supabase (Wrapped in try-catch for robustness)
 const SUPABASE_URL = "https://djbhipofzbonxfqriovi.supabase.co";
 const SUPABASE_ANON_KEY = "sb-publishable-DX7aNwHHI7tb6RUiWWe0qg_qPzuLcld";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+let supabase = null;
+try {
+    if (window.supabase) {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    } else {
+        console.warn("Supabase SDK not found. Online modes will be unavailable.");
+    }
+} catch (e) {
+    console.error("Supabase Init Failed:", e);
+}
 
 const BOARD_SIZE = 15;
 const boardElement = document.getElementById('board');
@@ -1376,9 +1386,10 @@ const PennyCrush = {
  */
 
 // Games Data Configuration
+// Games Data Configuration
 const games = [
     {
-        id: 1,
+        id: 'gomoku',
         title: 'Gomoku',
         subtitle: 'Classic strategy game. AI & Online PvP.',
         icon: '⚫⚪',
@@ -1386,7 +1397,7 @@ const games = [
         playable: true
     },
     {
-        id: 2,
+        id: 'pennycrush',
         title: 'Penny Crush',
         subtitle: 'Match 3 candies! 8x8, 10x10 & 12x12 modes.',
         icon: '🍬',
@@ -1394,25 +1405,9 @@ const games = [
         playable: true
     },
     {
-        id: 3,
+        id: 'coming1',
         title: 'Coming Soon',
-        subtitle: 'This game is under development.',
-        icon: '🔒',
-        action: null,
-        playable: false
-    },
-    {
-        id: 4,
-        title: 'Coming Soon',
-        subtitle: 'This game is under development.',
-        icon: '🔒',
-        action: null,
-        playable: false
-    },
-    {
-        id: 5,
-        title: 'Coming Soon',
-        subtitle: 'This game is under development.',
+        subtitle: 'Under development',
         icon: '🔒',
         action: null,
         playable: false
@@ -1424,6 +1419,12 @@ let currentSlide = 0;
 function renderCarousel() {
     const track = document.getElementById('game-carousel');
     if (!track) return;
+
+    // Safety check BEFORE clearing
+    if (!games || games.length === 0) {
+        console.error("Games list is empty or undefined!");
+        return;
+    }
 
     track.innerHTML = '';
 
@@ -1593,6 +1594,12 @@ async function joinRoom(code) {
         return;
     }
     roomId = code;
+
+    // 0. Check Supabase
+    if (!supabase) {
+        alert("Online services unavailable (SDK not loaded).");
+        return;
+    }
 
     // 1. Fetch Room State
     let { data: room, error } = await supabase
